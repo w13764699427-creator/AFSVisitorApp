@@ -1,0 +1,212 @@
+@page "/settings"
+@using VisitorApp.Services.Kernel
+@inject KernelApiOptions Options
+@inject KernelApiSettingsStore Store
+
+<PageTitle>系统设置 · 访客自助</PageTitle>
+
+<section class="va-step-page">
+    <div class="va-card">
+        <h2>系统设置 · 服务器连接</h2>
+        <p class="va-muted">配置后端服务器地址（IP / 端口）与服务账号。保存后立即生效，无需重启应用。</p>
+
+        <div class="va-form-grid">
+            <div class="va-field va-full">
+                <label>服务器地址<span class="va-req">*</span></label>
+                <input class="va-input va-input-lg" @bind="_baseUrl" @bind:event="oninput"
+                       placeholder="http://192.168.1.100:8088" />
+                <span class="va-hint">格式：http(s)://IP:端口，例如 http://192.168.1.100:8088（末尾不要加斜杠）。</span>
+            </div>
+
+            <div class="va-field">
+                <label>服务账号</label>
+                <input class="va-input" @bind="_account" placeholder="admin" />
+            </div>
+            <div class="va-field">
+                <label>服务密码</label>
+                <input class="va-input" type="password" @bind="_password" placeholder="••••••" />
+            </div>
+
+            <div class="va-field">
+                <label>客户端标识</label>
+                <input class="va-input" @bind="_clientId" placeholder="AFS-VISITOR-KIOSK" />
+            </div>
+            <div class="va-field">
+                <label>会话保持时长（秒）</label>
+                <input class="va-input" type="number" min="60" @bind="_keepTime" />
+            </div>
+            <div class="va-field">
+                <label>HTTP 超时（秒）</label>
+                <input class="va-input" type="number" min="1" @bind="_timeout" />
+            </div>
+
+            <div class="va-field va-full">
+                <label style="display:flex; align-items:center; gap:.6rem; cursor:pointer;">
+                    <input type="checkbox" @bind="_shift" style="width:18px; height:18px;" />
+                    服务端以东八区无时区时间存储（提交时统一 +8 小时）
+                </label>
+            </div>
+        </div>
+
+        @if (_testResult is not null)
+        {
+            <div style="@TestBoxStyle">@_testResult</div>
+        }
+
+        <div class="va-form-actions">
+            <button class="va-btn va-btn-ghost" @onclick="ResetDefaults">恢复默认</button>
+            <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+                <button class="va-btn va-btn-ghost" @onclick="TestAsync" disabled="@_testing">
+                    @if (_testing)
+                    {
+                        <span>测试中…</span>
+                    }
+                    else
+                    {
+                        <span>测试连接</span>
+                    }
+                </button>
+                <button class="va-btn va-btn-primary" @onclick="SaveAsync">保存</button>
+            </div>
+        </div>
+    </div>
+</section>
+
+<Toast @ref="_toast" />
+
+@code {
+    private string _baseUrl = string.Empty;
+    private string _account = string.Empty;
+    private string _password = string.Empty;
+    private string _clientId = string.Empty;
+    private int _keepTime;
+    private int _timeout;
+    private bool _shift;
+
+    private bool _testing;
+    private string? _testResult;
+    private bool _testOk;
+    private Toast? _toast;
+
+    private string TestBoxStyle =>
+        $"margin-top:1.2rem; padding:.85rem 1rem; border-radius:10px; font-size:.95rem; line-height:1.5; " +
+        (_testOk
+            ? "background:#ecfdf5; color:#047857; border:1px solid #a7f3d0;"
+            : "background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;");
+
+    protected override void OnInitialized()
+    {
+        _baseUrl = Options.BaseUrl;
+        _account = Options.ServiceAccount;
+        _password = Options.ServicePassword;
+        _clientId = Options.ClientId;
+        _keepTime = Options.KeepTimeSeconds;
+        _timeout = Options.TimeoutSeconds;
+        _shift = Options.ShiftToBeijingTimeOnWrite;
+    }
+
+    private bool TryValidate(out string normalizedBaseUrl, out string? error)
+    {
+        normalizedBaseUrl = KernelApiSettingsStore.NormalizeBaseUrl(_baseUrl);
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+        {
+            error = "请填写服务器地址";
+            return false;
+        }
+        if (!Uri.TryCreate(normalizedBaseUrl, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            error = "服务器地址格式不正确，应为 http(s)://IP:端口";
+            return false;
+        }
+        if (_keepTime < 60)
+        {
+            error = "会话保持时长至少 60 秒";
+            return false;
+        }
+        if (_timeout < 1)
+        {
+            error = "HTTP 超时至少 1 秒";
+            return false;
+        }
+        return true;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!TryValidate(out var baseUrl, out var error))
+        {
+            await ShowToast(error!, "error");
+            return;
+        }
+
+        Options.BaseUrl = baseUrl;
+        Options.ServiceAccount = _account?.Trim() ?? string.Empty;
+        Options.ServicePassword = _password ?? string.Empty;
+        Options.ClientId = _clientId?.Trim() ?? string.Empty;
+        Options.KeepTimeSeconds = _keepTime;
+        Options.TimeoutSeconds = _timeout;
+        Options.ShiftToBeijingTimeOnWrite = _shift;
+
+        Store.Save(Options);
+        _baseUrl = baseUrl; // 回填规范化后的地址
+
+        await ShowToast("配置已保存，立即生效", "success");
+    }
+
+    private async Task TestAsync()
+    {
+        if (!TryValidate(out var baseUrl, out var error))
+        {
+            _testOk = false;
+            _testResult = error;
+            return;
+        }
+
+        _testing = true;
+        _testResult = null;
+        StateHasChanged();
+
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Clamp(_timeout, 1, 60)) };
+            using var resp = await http.GetAsync(baseUrl);
+            // 只要服务器有响应（含 4xx/5xx）即视为地址/端口可达。
+            _testOk = true;
+            _testResult = $"已连接到服务器（HTTP {(int)resp.StatusCode} {resp.StatusCode}），地址与端口可达。";
+        }
+        catch (TaskCanceledException)
+        {
+            _testOk = false;
+            _testResult = "连接超时，请检查服务器地址、端口与网络连通性。";
+        }
+        catch (Exception ex)
+        {
+            _testOk = false;
+            _testResult = $"无法连接：{ex.Message}";
+        }
+        finally
+        {
+            _testing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ResetDefaults()
+    {
+        var d = new KernelApiOptions();
+        _baseUrl = d.BaseUrl;
+        _account = d.ServiceAccount;
+        _password = d.ServicePassword;
+        _clientId = d.ClientId;
+        _keepTime = d.KeepTimeSeconds;
+        _timeout = d.TimeoutSeconds;
+        _shift = d.ShiftToBeijingTimeOnWrite;
+        _testResult = null;
+    }
+
+    private Task ShowToast(string message, string kind)
+        => _toast?.ShowAsync(message, kind) ?? Task.CompletedTask;
+}

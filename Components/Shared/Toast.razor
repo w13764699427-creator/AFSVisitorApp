@@ -1,0 +1,33 @@
+@if (_visible)
+{
+    <div class="va-toast va-toast-@_kind">@_message</div>
+}
+
+@code {
+    private bool _visible;
+    private string _message = string.Empty;
+    private string _kind = "success";
+    private CancellationTokenSource? _cts;
+
+    public async Task ShowAsync(string message, string kind = "success", int durationMs = 2400)
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        _message = message;
+        _kind = kind;
+        _visible = true;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(durationMs, token);
+            _visible = false;
+            StateHasChanged();
+        }
+        catch (TaskCanceledException)
+        {
+        }
+    }
+}

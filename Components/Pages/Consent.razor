@@ -1,0 +1,85 @@
+@page "/consent"
+@inject NavigationManager Nav
+@inject VisitorFormState State
+@inject LocalizationService L
+@implements IDisposable
+
+<PageTitle>@L["consent.title"]</PageTitle>
+
+<section class="va-step-page">
+    <div class="va-stepper">
+        <div class="va-step va-step-active"><span>1</span>@L["step.consent"]</div>
+        <div class="va-step-bar"></div>
+        <div class="va-step"><span>2</span>@L["step.info"]</div>
+        <div class="va-step-bar"></div>
+        <div class="va-step"><span>3</span>@L["step.done"]</div>
+    </div>
+
+    <div class="va-card va-consent">
+        <h2>@L["consent.title"]</h2>
+        <p class="va-muted">@L["consent.subtitle"]</p>
+
+        <div class="va-consent-body">
+            @((MarkupString)_consentHtml)
+        </div>
+
+        <label class="va-checkbox">
+            <input type="checkbox" @bind="_accepted" />
+            <span>@L["consent.check"]</span>
+        </label>
+
+        @if (_showError)
+        {
+            <div class="va-alert va-alert-danger">@L["consent.alert"]</div>
+        }
+
+        <div class="va-form-actions">
+            <button class="va-btn va-btn-ghost va-btn-lg" @onclick="Cancel">@L["btn.cancel"]</button>
+            <button class="va-btn va-btn-primary va-btn-lg" @onclick="Continue">@L["btn.continue"]</button>
+        </div>
+    </div>
+</section>
+
+@code {
+    private bool _accepted;
+    private bool _showError;
+    private string _consentHtml = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        _accepted = State.Current.ConsentAccepted;
+        L.OnLanguageChanged += OnLang;
+        LoadConsent();
+    }
+
+    private void LoadConsent()
+    {
+        _consentHtml = L["consent.body"];
+    }
+
+    private void OnLang()
+    {
+        LoadConsent();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Continue()
+    {
+        if (!_accepted)
+        {
+            _showError = true;
+            return;
+        }
+        State.Current.ConsentAccepted = true;
+        State.Current.ConsentTime = DateTime.Now;
+        Nav.NavigateTo("register");
+    }
+
+    private void Cancel()
+    {
+        State.ResetAll();
+        Nav.NavigateTo("");
+    }
+
+    public void Dispose() => L.OnLanguageChanged -= OnLang;
+}

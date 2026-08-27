@@ -1,0 +1,253 @@
+@page "/success/{Id:int}"
+@inject NavigationManager Nav
+@inject VisitorDatabase Db
+@inject VisitorFormState State
+@implements IDisposable
+
+<PageTitle>登记成功 · 访客凭证</PageTitle>
+
+<section class="va-step-page">
+    <div class="va-stepper">
+        <div class="va-step va-step-done"><span>1</span>隐私同意</div>
+        <div class="va-step-bar va-step-bar-done"></div>
+        <div class="va-step va-step-done"><span>2</span>信息填写</div>
+        <div class="va-step-bar va-step-bar-done"></div>
+        <div class="va-step va-step-active"><span>3</span>登记完成</div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="va-card va-loading">正在生成凭证…</div>
+    }
+    else if (_visitor is null)
+    {
+        <div class="va-card">
+            <div class="va-empty">
+                <span class="va-empty-icon">!</span>
+                <h3>未找到登记记录</h3>
+                <p>该访客凭证不存在或已过期。</p>
+                <a class="va-btn va-btn-primary va-btn-lg" href="">返回首页</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="va-success-wrap">
+            <div class="va-success-banner">
+                <div class="va-success-check">
+                    <svg width="56" height="56" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="11" stroke="currentColor" stroke-width="2" />
+                        <path d="M7 12.5l3.2 3.2L17 8.8" stroke="currentColor" stroke-width="2.6"
+                              stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                    </svg>
+                </div>
+                <div>
+                    <h2>登记成功，欢迎光临！</h2>
+                    <p>请在前台领取访客证或出示下方凭证</p>
+                </div>
+                <div class="va-success-time">
+                    <span>登记时间</span>
+                    <strong>@_visitor.CheckInTime.ToString("HH:mm:ss")</strong>
+                </div>
+            </div>
+
+            <div class="va-pass">
+                <div class="va-pass-left">
+                    <div class="va-pass-head">
+                        <span class="va-pass-label">VISITOR PASS</span>
+                        <span class="va-pass-date">@_visitor.CheckInTime.ToString("yyyy / MM / dd")</span>
+                    </div>
+
+                    <div class="va-pass-body">
+                        <div class="va-pass-avatar">@Initial(_visitor.Name)</div>
+                        <div class="va-pass-info">
+                            <div class="va-pass-name">@_visitor.Name
+                                @if (_visitor.Companions > 0)
+                                {
+                                    <span class="va-badge va-badge-info">同行 @_visitor.Companions 人</span>
+                                }
+                            </div>
+                            <div class="va-pass-meta">@(string.IsNullOrWhiteSpace(_visitor.Company) ? "—" : _visitor.Company)</div>
+                            <div class="va-pass-meta">访 <strong>@_visitor.HostName</strong>
+                                @if (!string.IsNullOrWhiteSpace(_visitor.HostDepartment))
+                                {
+                                    <span>（@_visitor.HostDepartment）</span>
+                                }
+                            </div>
+                            <div class="va-pass-purpose">事由：@_visitor.Purpose</div>
+                        </div>
+                    </div>
+
+                    <div class="va-pass-foot">
+                        <div>
+                            <span>访客编号</span>
+                            <strong class="va-code">@_visitor.VisitCode</strong>
+                        </div>
+                        <div>
+                            <span>状态</span>
+                            <strong class="@_visitor.Status.ToBadgeClass()">@_visitor.Status.ToDisplay()</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="va-pass-right">
+                    @if (!string.IsNullOrEmpty(_visitor.FacePhoto))
+                    {
+                        <img class="va-pass-face" src="@_visitor.FacePhoto" alt="Face" />
+                    }
+                    <div class="va-qr">
+                        @((MarkupString)_qrSvg)
+                    </div>
+                    <div class="va-qr-hint">
+                        扫码可核验<br />
+                        或向前台口播编号
+                    </div>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_visitor.IdNumber) || !string.IsNullOrWhiteSpace(_visitor.Address))
+            {
+                <div class="va-pass-extra">
+                    @if (!string.IsNullOrWhiteSpace(_visitor.IdNumber))
+                    {
+                        <div><span>身份证号</span><strong>@MaskId(_visitor.IdNumber)</strong></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_visitor.Gender))
+                    {
+                        <div><span>性别 / 出生</span><strong>@_visitor.Gender · @_visitor.Birthday</strong></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_visitor.Address))
+                    {
+                        <div class="va-pass-extra-wide"><span>住址</span><strong>@_visitor.Address</strong></div>
+                    }
+                </div>
+            }
+
+            <div class="va-success-actions">
+                <button class="va-btn va-btn-ghost va-btn-lg" @onclick="Print">🖨 打印凭证</button>
+                <button class="va-btn va-btn-primary va-btn-lg" @onclick="Done">完成，返回首页</button>
+            </div>
+
+            <p class="va-success-tip">
+                ⏱ <strong>@_remain</strong> 秒后自动返回首页
+            </p>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Visitor? _visitor;
+    private bool _loading = true;
+    private string _qrSvg = string.Empty;
+    private System.Threading.Timer? _redirectTimer;
+    private int _remain = 30;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _visitor = State.LastSubmitted?.Id == Id
+            ? State.LastSubmitted
+            : await Db.GetAsync(Id);
+        _loading = false;
+
+        if (_visitor is not null)
+        {
+            _qrSvg = BuildQrSvg($"VC:{_visitor.VisitCode}|{_visitor.Name}|{_visitor.Phone}");
+        }
+
+        _redirectTimer = new System.Threading.Timer(_ =>
+        {
+            _remain--;
+            if (_remain <= 0)
+            {
+                _redirectTimer?.Dispose();
+                InvokeAsync(Done);
+            }
+            else
+            {
+                InvokeAsync(StateHasChanged);
+            }
+        }, null, 1000, 1000);
+    }
+
+    private void Done()
+    {
+        State.ResetAll();
+        Nav.NavigateTo("");
+    }
+
+    private void Print()
+    {
+        // BlazorWebView 中可借助 JS interop 触发打印，这里给出占位实现。
+        // 真实部署可注入 IJSRuntime 调用 window.print()。
+    }
+
+    private static string Initial(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "·";
+        return name.Trim()[0].ToString();
+    }
+
+    /// <summary>身份证号脱敏：保留前 4 后 4，中间 *。</summary>
+    private static string MaskId(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id.Length < 9) return id ?? string.Empty;
+        return string.Concat(id.AsSpan(0, 4), new string('*', id.Length - 8), id.AsSpan(id.Length - 4, 4));
+    }
+
+    /// <summary>
+    /// 轻量级"伪 QR 码"：将文本 SHA 摘要映射为 24x24 网格，外形与 QR 接近，
+    /// 用于离线展示。真实生产请替换为 QRCoder 等库生成真实 QR。
+    /// </summary>
+    private static string BuildQrSvg(string payload)
+    {
+        const int size = 24;
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
+        var grid = new bool[size, size];
+        for (var i = 0; i < size * size; i++)
+        {
+            grid[i / size, i % size] = ((bytes[i % bytes.Length] >> (i % 8)) & 1) == 1;
+        }
+        // 加上三个定位角（左上 / 右上 / 左下）
+        void DrawFinder(int r0, int c0)
+        {
+            for (var r = 0; r < 7; r++)
+            {
+                for (var c = 0; c < 7; c++)
+                {
+                    var rr = r0 + r;
+                    var cc = c0 + c;
+                    if (rr >= size || cc >= size) continue;
+                    var onBorder = r == 0 || r == 6 || c == 0 || c == 6;
+                    var onCenter = r is >= 2 and <= 4 && c is >= 2 and <= 4;
+                    grid[rr, cc] = onBorder || onCenter;
+                    if (!onBorder && !onCenter) grid[rr, cc] = false;
+                }
+            }
+        }
+        DrawFinder(0, 0);
+        DrawFinder(0, size - 7);
+        DrawFinder(size - 7, 0);
+
+        var sb = new System.Text.StringBuilder();
+        const int cell = 8;
+        var total = size * cell;
+        sb.Append($"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {total} {total}' width='100%' height='100%'>");
+        sb.Append($"<rect width='{total}' height='{total}' fill='#ffffff'/>");
+        for (var r = 0; r < size; r++)
+        {
+            for (var c = 0; c < size; c++)
+            {
+                if (!grid[r, c]) continue;
+                var x = c * cell;
+                var y = r * cell;
+                sb.Append($"<rect x='{x}' y='{y}' width='{cell}' height='{cell}' fill='#0f172a'/>");
+            }
+        }
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    public void Dispose() => _redirectTimer?.Dispose();
+}

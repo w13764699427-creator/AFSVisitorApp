@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="app.title" xml:space="preserve"><value>Smart Visitor Self-Service</value></data>
+  <data name="app.subtitle" xml:space="preserve"><value>Visitor Self-Service Kiosk</value></data>
+  <data name="app.back_home" xml:space="preserve"><value>↩ Back to Home</value></data>
+  <data name="app.footer.contact" xml:space="preserve"><value>Need help? Reception · Ext. 9999</value></data>
+  <data name="app.footer.version" xml:space="preserve"><value>v 1.0.0 · On-Premise</value></data>
+  <data name="app.language" xml:space="preserve"><value>Language</value></data>
+  <data name="home.hero.tag" xml:space="preserve"><value>VISITOR · KIOSK</value></data>
+  <data name="home.hero.title.prefix" xml:space="preserve"><value>Welcome to</value></data>
+  <data name="home.hero.title.brand" xml:space="preserve"><value>the Smart Visitor Kiosk</value></data>
+  <data name="home.hero.desc" xml:space="preserve"><value>Please complete self-registration on screen — it usually takes just 30 seconds. Your information is strictly protected.</value></data>
+  <data name="home.stats.today" xml:space="preserve"><value>Today</value></data>
+  <data name="home.stats.onsite" xml:space="preserve"><value>On-site</value></data>
+  <data name="home.stats.avg" xml:space="preserve"><value>Avg. time</value></data>
+  <data name="home.stats.weekly" xml:space="preserve"><value>This week</value></data>
+  <data name="home.stats.suffix.persons" xml:space="preserve"><value> visitors</value></data>
+  <data name="home.stats.suffix.seconds" xml:space="preserve"><value>s</value></data>
+  <data name="home.action.register" xml:space="preserve"><value>Register</value></data>
+  <data name="home.action.register.hint" xml:space="preserve"><value>First visit? Tap here to register.</value></data>
+  <data name="home.action.checkout" xml:space="preserve"><value>Check Out</value></data>
+  <data name="home.action.checkout.hint" xml:space="preserve"><value>Leaving? Sign out here.</value></data>
+  <data name="home.action.history" xml:space="preserve"><value>My Visits</value></data>
+  <data name="home.action.history.hint" xml:space="preserve"><value>Last 30 records on this device.</value></data>
+  <data name="home.tip.title" xml:space="preserve"><value>Tip</value></data>
+  <data name="home.tip.desc" xml:space="preserve"><value>Please have your host's name and department ready. Reception staff are happy to help.</value></data>
+  <data name="step.consent" xml:space="preserve"><value>Consent</value></data>
+  <data name="step.info" xml:space="preserve"><value>Information</value></data>
+  <data name="step.done" xml:space="preserve"><value>Done</value></data>
+  <data name="sub.scan" xml:space="preserve"><value>Scan ID</value></data>
+  <data name="sub.basic" xml:space="preserve"><value>Basics</value></data>
+  <data name="sub.company" xml:space="preserve"><value>Company</value></data>
+  <data name="sub.visit" xml:space="preserve"><value>Visit</value></data>
+  <data name="sub.face" xml:space="preserve"><value>Photo</value></data>
+  <data name="btn.prev" xml:space="preserve"><value>← Previous</value></data>
+  <data name="btn.next" xml:space="preserve"><value>Next →</value></data>
+  <data name="btn.submit" xml:space="preserve"><value>✓ Submit</value></data>
+  <data name="btn.submitting" xml:space="preserve"><value>Submitting…</value></data>
+  <data name="btn.skip" xml:space="preserve"><value>Skip scan, fill manually</value></data>
+  <data name="btn.scan" xml:space="preserve"><value>📷 Scan ID Card</value></data>
+  <data name="btn.rescan" xml:space="preserve"><value>Re-scan</value></data>
+  <data name="btn.capture_face" xml:space="preserve"><value>📸 Take Photo</value></data>
+  <data name="btn.cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="btn.continue" xml:space="preserve"><value>Agree &amp; Continue →</value></data>
+  <data name="btn.back_consent" xml:space="preserve"><value>← Re-read Consent</value></data>
+  <data name="btn.retry" xml:space="preserve"><value>Retry</value></data>
+  <data name="scan.title" xml:space="preserve"><value>Scan ID Card (front side)</value></data>
+  <data name="scan.tip" xml:space="preserve"><value>Hold the ID card flat in front of the camera. Make sure all four corners are visible with even lighting.</value></data>
+  <data name="scan.recognizing" xml:space="preserve"><value>Recognising ID card…</value></data>
+  <data name="scan.success" xml:space="preserve"><value>Recognised. The following fields are auto-filled:</value></data>
+  <data name="scan.confidence" xml:space="preserve"><value>Confidence {0}%</value></data>
+  <data name="scan.field.name" xml:space="preserve"><value>Name</value></data>
+  <data name="scan.field.gender" xml:space="preserve"><value>Gender</value></data>
+  <data name="scan.field.birthday" xml:space="preserve"><value>Birthday</value></data>
+  <data name="scan.field.idnumber" xml:space="preserve"><value>ID No.</value></data>
+  <data name="scan.field.address" xml:space="preserve"><value>Address</value></data>
+  <data name="scan.field.authority" xml:space="preserve"><value>Issued by</value></data>
+  <data name="scan.field.validity" xml:space="preserve"><value>Validity</value></data>
+  <data name="scan.fail.lowq" xml:space="preserve"><value>Image quality too low, please retry</value></data>
+  <data name="scan.fail.notid" xml:space="preserve"><value>No ID card detected</value></data>
+  <data name="scan.fail.net" xml:space="preserve"><value>Network error, please retry</value></data>
+  <data name="face.title" xml:space="preserve"><value>Take Your Photo</value></data>
+  <data name="face.tip" xml:space="preserve"><value>Face the camera directly. Make sure your face is fully visible with good lighting. The photo is used only for this visit.</value></data>
+  <data name="face.captured" xml:space="preserve"><value>Photo captured</value></data>
+  <data name="face.optional" xml:space="preserve"><value>(Optional — skip if reception didn't ask)</value></data>
+  <data name="field.name" xml:space="preserve"><value>Full name</value></data>
+  <data name="field.name.placeholder" xml:space="preserve"><value>Your real name</value></data>
+  <data name="field.phone" xml:space="preserve"><value>Mobile</value></data>
+  <data name="field.phone.placeholder" xml:space="preserve"><value>11-digit Chinese mobile</value></data>
+  <data name="field.phone.hint" xml:space="preserve"><value>Used for identity and emergency contact</value></data>
+  <data name="field.idnumber" xml:space="preserve"><value>ID number</value></data>
+  <data name="field.idnumber.optional" xml:space="preserve"><value>(optional)</value></data>
+  <data name="field.idnumber.placeholder" xml:space="preserve"><value>Leave blank if not required</value></data>
+  <data name="field.company" xml:space="preserve"><value>Visiting company</value></data>
+  <data name="field.company.placeholder" xml:space="preserve"><value>e.g. ACME Tech Inc.</value></data>
+  <data name="field.companions" xml:space="preserve"><value>Companions</value></data>
+  <data name="field.companions.hint" xml:space="preserve"><value>Enter name &amp; mobile, then tap Add. Not including you</value></data>
+  <data name="field.companion.name.placeholder" xml:space="preserve"><value>Companion name</value></data>
+  <data name="field.companion.phone.placeholder" xml:space="preserve"><value>Companion mobile</value></data>
+  <data name="field.companions.empty" xml:space="preserve"><value>No companions yet — you can proceed</value></data>
+  <data name="btn.add_companion" xml:space="preserve"><value>Add</value></data>
+  <data name="field.host" xml:space="preserve"><value>Host</value></data>
+  <data name="field.host.placeholder" xml:space="preserve"><value>Host's name</value></data>
+  <data name="field.host.searching" xml:space="preserve"><value>Searching employee directory…</value></data>
+  <data name="field.host.suggestions" xml:space="preserve"><value>Suggestions:</value></data>
+  <data name="field.department" xml:space="preserve"><value>Department</value></data>
+  <data name="field.department.placeholder" xml:space="preserve"><value>e.g. R&amp;D / Sales</value></data>
+  <data name="field.purpose" xml:space="preserve"><value>Purpose</value></data>
+  <data name="field.purpose.placeholder" xml:space="preserve"><value>e.g. Project meeting / Business / Maintenance / Interview</value></data>
+  <data name="field.visitplace" xml:space="preserve"><value>Visit location</value></data>
+  <data name="field.visitplace.placeholder" xml:space="preserve"><value>e.g. Lobby / 3F Meeting Room</value></data>
+  <data name="field.visitstart" xml:space="preserve"><value>Visit start time</value></data>
+  <data name="field.visitend" xml:space="preserve"><value>Visit end time</value></data>
+  <data name="field.options.loading" xml:space="preserve"><value>Loading options…</value></data>
+  <data name="field.notes" xml:space="preserve"><value>Notes</value></data>
+  <data name="field.notes.placeholder" xml:space="preserve"><value>Carry-on items, special requests…</value></data>
+  <data name="field.required" xml:space="preserve"><value>*</value></data>
+  <data name="consent.title" xml:space="preserve"><value>Visitor Privacy Notice</value></data>
+  <data name="consent.subtitle" xml:space="preserve"><value>Please read the privacy terms below before continuing.</value></data>
+  <data name="consent.check" xml:space="preserve"><value>I have read and agree to the notice above and voluntarily submit my information.</value></data>
+  <data name="consent.alert" xml:space="preserve"><value>Please tick the consent box first.</value></data>
+  <data name="toast.fill_phone" xml:space="preserve"><value>Please fill in name and mobile correctly first</value></data>
+  <data name="toast.submitted" xml:space="preserve"><value>Submitted! Generating visitor pass…</value></data>
+  <data name="toast.api_ticket" xml:space="preserve"><value>Server ticket: {0}</value></data>
+  <data name="toast.api_failed" xml:space="preserve"><value>Submit failed: {0}</value></data>
+  <data name="toast.no_camera" xml:space="preserve"><value>Camera unavailable. Opening photo library instead.</value></data>
+  <data name="toast.permission_denied" xml:space="preserve"><value>Camera permission denied. Please enable it in system settings.</value></data>
+  <data name="camera.initializing" xml:space="preserve"><value>Initializing camera…</value></data>
+  <data name="camera.loading" xml:space="preserve"><value>Loading camera preview…</value></data>
+  <data name="camera.not_supported" xml:space="preserve"><value>Camera not supported on this device</value></data>
+  <data name="camera.service_not_available" xml:space="preserve"><value>Camera service unavailable</value></data>
+  <data name="consent.body" xml:space="preserve"><value>&lt;p&gt;To safeguard the security of the premises, we will collect and process the following information during your visit:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Basic info: &lt;strong&gt;Name, mobile&lt;/strong&gt; (required, for identification &amp; emergency contact).&lt;/li&gt;
+&lt;li&gt;Visit info: &lt;strong&gt;Visiting company, host, host department, purpose, number of companions&lt;/strong&gt;.&lt;/li&gt;
+&lt;li&gt;Optional: &lt;strong&gt;ID number&lt;/strong&gt; (only if requested by reception).&lt;/li&gt;
+&lt;li&gt;System fields: check-in &amp; check-out timestamps.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;Your data is used &lt;strong&gt;solely for visitor reception and security&lt;/strong&gt;, never for commercial purposes. We retain it in accordance with applicable laws and destroy it when no longer needed. You may request deletion at any time after checking out.&lt;/p&gt;</value></data>
+</root>

@@ -1,0 +1,64 @@
+@page "/my-visits"
+@inject VisitorDatabase Db
+
+<PageTitle>我的来访 · 访客自助</PageTitle>
+
+<section class="va-step-page">
+    <div class="va-card">
+        <h2>本机最近登记记录</h2>
+        <p class="va-muted">仅显示在<strong>本设备</strong>上完成的最近 30 条记录，按时间倒序。</p>
+
+        @if (_loading)
+        {
+            <div class="va-loading">加载中…</div>
+        }
+        else if (_list.Count == 0)
+        {
+            <div class="va-empty">
+                <span class="va-empty-icon">📭</span>
+                <h3>暂无登记记录</h3>
+                <p>完成首次登记后，记录将会显示在这里。</p>
+                <a class="va-btn va-btn-primary va-btn-lg" href="">立即去登记</a>
+            </div>
+        }
+        else
+        {
+            <div class="va-mv-summary">
+                <div>
+                    <span>记录总数</span>
+                    <strong>@_list.Count</strong>
+                </div>
+                <div>
+                    <span>当前在场</span>
+                    <strong>@_list.Count(v => v.Status == VisitStatus.CheckedIn)</strong>
+                </div>
+                <div>
+                    <span>已离场</span>
+                    <strong>@_list.Count(v => v.Status == VisitStatus.CheckedOut)</strong>
+                </div>
+            </div>
+
+            @foreach (var v in _list)
+            {
+                <VisitorRow Visitor="v" />
+            }
+        }
+    </div>
+</section>
+
+@code {
+    private List<Visitor> _list = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _list = await Db.GetRecentAsync(30);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

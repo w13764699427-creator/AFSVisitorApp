@@ -1,0 +1,123 @@
+@page "/checkout"
+@using VisitorApp.Services.Kernel
+@inject VisitorDatabase Db
+@inject VisitorRegistrationService RegService
+@inject NavigationManager Nav
+
+<PageTitle>离场签退 · 访客自助</PageTitle>
+
+<section class="va-step-page">
+    <div class="va-card va-search-card">
+        <h2>离场签退</h2>
+        <p class="va-muted">请输入登记时使用的手机号，或访客编号。</p>
+
+        <div class="va-search-row">
+            <input class="va-input va-input-lg va-grow" @bind="_keyword"
+                   @bind:event="oninput" @onkeydown="OnKey"
+                   placeholder="手机号 / V0603xxxx" autofocus />
+            <button class="va-btn va-btn-primary va-btn-lg" @onclick="SearchAsync" disabled="@_loading">
+                @if (_loading) { <span>查询中…</span> } else { <span>🔍 查询</span> }
+            </button>
+        </div>
+
+        @if (_searched && _list.Count == 0 && _byCode is null)
+        {
+            <div class="va-empty">
+                <span class="va-empty-icon">∅</span>
+                <h3>未找到匹配的在场记录</h3>
+                <p>请确认手机号 / 编号是否正确，或前往前台协助处理。</p>
+            </div>
+        }
+        else if (_byCode is not null)
+        {
+            <VisitorRow Visitor="_byCode" OnCheckOut="@(v => CheckOutAsync(v))" />
+        }
+        else if (_list.Count > 0)
+        {
+            <h3 class="va-card-title">查询到 @_list.Count 条在场记录</h3>
+            @foreach (var v in _list)
+            {
+                <VisitorRow Visitor="v" OnCheckOut="@(x => CheckOutAsync(x))" />
+            }
+        }
+    </div>
+</section>
+
+<Toast @ref="_toast" />
+
+@code {
+    private string _keyword = string.Empty;
+    private List<Visitor> _list = new();
+    private Visitor? _byCode;
+    private bool _searched;
+    private bool _loading;
+    private Toast? _toast;
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchAsync();
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        var key = _keyword?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(key))
+        {
+            await (_toast?.ShowAsync("请输入手机号或访客编号", "error") ?? Task.CompletedTask);
+            return;
+        }
+
+        _loading = true;
+        _searched = false;
+        _list = new List<Visitor>();
+        _byCode = null;
+
+        try
+        {
+            // 优先按访客编号匹配
+            if (key.StartsWith("V", StringComparison.OrdinalIgnoreCase))
+            {
+                _byCode = await Db.GetByCodeAsync(key);
+                if (_byCode is not null && _byCode.Status != VisitStatus.CheckedIn)
+                {
+                    await (_toast?.ShowAsync($"该编号已于 {_byCode.CheckOutTime:HH:mm} 签退", "error") ?? Task.CompletedTask);
+                    _byCode = null;
+                }
+            }
+            else
+            {
+                _list = await Db.GetActiveByPhoneAsync(key);
+            }
+        }
+        finally
+        {
+            _loading = false;
+            _searched = true;
+        }
+    }
+
+    private async Task CheckOutAsync(Visitor v)
+    {
+        // 先调用后端签退（VisitorCheckOut）；后端不可用时不阻断本地签退。
+        if (v.SheetId > 0)
+        {
+            try { await RegService.CheckOutAsync(v.SheetId); }
+            catch { /* 离线降级：仅更新本地 */ }
+        }
+
+        var rows = await Db.CheckOutAsync(v.Id);
+        if (rows > 0)
+        {
+            await (_toast?.ShowAsync($"{v.Name}，再见！已成功签退") ?? Task.CompletedTask);
+            await Task.Delay(800);
+            Nav.NavigateTo("");
+        }
+        else
+        {
+            await (_toast?.ShowAsync("签退失败，请联系前台", "error") ?? Task.CompletedTask);
+        }
+    }
+}

@@ -1,0 +1,59 @@
+@using VisitorApp.Services.Localization
+@inject LocalizationService L
+@implements IDisposable
+
+<div class="va-lang">
+    <button class="va-lang-btn" @onclick="Toggle" type="button" aria-haspopup="true" aria-expanded="@_open">
+        <span class="va-lang-flag">@L.CurrentOption.Flag</span>
+        <span class="va-lang-name">@L.CurrentOption.NativeName</span>
+        <span class="va-lang-caret">▾</span>
+    </button>
+
+    @if (_open)
+    {
+        <div class="va-lang-menu" @onclick:stopPropagation="true">
+            <div class="va-lang-menu-title">@L["app.language"]</div>
+            @foreach (var lang in L.AvailableLanguages)
+            {
+                var isCurrent = lang.Code == L.CurrentLanguage;
+                <button class="va-lang-item @(isCurrent ? "va-lang-item-active" : null)"
+                        type="button"
+                        @onclick="@(() => Pick(lang.Code))">
+                    <span class="va-lang-flag">@lang.Flag</span>
+                    <span class="va-lang-item-text">
+                        <strong>@lang.NativeName</strong>
+                        <span>@lang.EnglishName</span>
+                    </span>
+                    @if (isCurrent)
+                    {
+                        <span class="va-lang-check">✓</span>
+                    }
+                </button>
+            }
+        </div>
+        <div class="va-lang-backdrop" @onclick="Close"></div>
+    }
+</div>
+
+@code {
+    private bool _open;
+
+    protected override void OnInitialized()
+    {
+        L.OnLanguageChanged += HandleLangChanged;
+    }
+
+    private void HandleLangChanged() => InvokeAsync(StateHasChanged);
+
+    private void Toggle() => _open = !_open;
+
+    private void Close() => _open = false;
+
+    private void Pick(string code)
+    {
+        L.SetLanguage(code);
+        _open = false;
+    }
+
+    public void Dispose() => L.OnLanguageChanged -= HandleLangChanged;
+}

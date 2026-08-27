@@ -1,0 +1,780 @@
+@page "/register"
+@using VisitorApp.Models.Kernel
+@using VisitorApp.Services.Kernel
+@inject NavigationManager Nav
+@inject VisitorFormState State
+@inject VisitorDatabase Db
+@inject VisitorRegistrationService RegService
+@inject LocalizationService L
+@inject IIdCardReaderService IdCardReader
+@implements IDisposable
+
+<PageTitle>智能访客自助登记 · @CurrentStepTitle()</PageTitle>
+
+<section class="va-step-page">
+    <div class="va-stepper">
+        <div class="va-step va-step-done"><span>1</span>@L["step.consent"]</div>
+        <div class="va-step-bar va-step-bar-done"></div>
+        <div class="va-step va-step-active"><span>2</span>@L["step.info"]</div>
+        <div class="va-step-bar"></div>
+        <div class="va-step"><span>3</span>@L["step.done"]</div>
+    </div>
+
+    <div class="va-card">
+        <div class="va-substepper">
+            @for (int i = 0; i < 5; i++)
+            {
+                var idx = i;
+                <div class="va-sub @(SubClass(idx))">@L[StepTitleKey(idx)]</div>
+            }
+        </div>
+
+        <EditForm Model="State.Current" OnValidSubmit="HandleSubmitAsync">
+            <DataAnnotationsValidator />
+
+            @if (_step == 1)
+            {
+                <div class="va-scan-pane">
+                    <h3 class="va-scan-title">@L["scan.title"]</h3>
+                    <p class="va-muted">请将身份证放置在读卡器上</p>
+                    <div class="va-scan-stage">
+                        @if (_cardResult?.PhotoBase64 is not null)
+                        {
+                            <img class="va-scan-preview" src="@_cardResult.PhotoBase64" alt="ID Card" />
+                        }
+                        else
+                        {
+                            <div class="va-scan-placeholder">
+                                <svg width="80" height="64" viewBox="0 0 80 64" fill="none">
+                                    <rect x="4" y="4" width="72" height="56" rx="6" stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 4" />
+                                    <circle cx="22" cy="28" r="8" fill="#cbd5e1" />
+                                    <rect x="36" y="22" width="32" height="4" rx="2" fill="#cbd5e1" />
+                                    <rect x="36" y="32" width="22" height="4" rx="2" fill="#e2e8f0" />
+                                    <rect x="12" y="46" width="56" height="4" rx="2" fill="#e2e8f0" />
+                                </svg>
+                                <p>请刷身份证</p>
+                            </div>
+                        }
+                        @if (_readingCard)
+                        {
+                            <div class="va-scan-overlay">
+                                <div class="va-spinner"></div>
+                                <span>读卡中...</span>
+                            </div>
+                        }
+                    </div>
+                    @if (_cardResult is not null)
+                    {
+                        <div class="va-scan-result">
+                            <div class="va-scan-result-head">
+                                <span class="va-badge va-badge-success">✓ 读卡成功</span>
+                            </div>
+                            <div class="va-scan-grid">
+                                <div><span>@L["scan.field.name"]</span><strong>@_cardResult.Name</strong></div>
+                                <div><span>@L["scan.field.gender"]</span><strong>@_cardResult.Gender</strong></div>
+                                <div><span>@L["scan.field.birthday"]</span><strong>@_cardResult.Birthday</strong></div>
+                                <div><span>@L["scan.field.idnumber"]</span><strong>@_cardResult.IdNumber</strong></div>
+                                <div class="va-scan-grid-wide"><span>@L["scan.field.address"]</span><strong>@_cardResult.Address</strong></div>
+                                <div><span>@L["scan.field.authority"]</span><strong>@_cardResult.IssuingAuthority</strong></div>
+                                <div><span>@L["scan.field.validity"]</span><strong>@_cardResult.StartDate ~ @_cardResult.EndDate</strong></div>
+                            </div>
+                        </div>
+                    }
+                    <div class="va-scan-actions">
+                        <button type="button" class="va-btn va-btn-primary va-btn-lg" @onclick="ReadIdCardAsync" disabled="@_readingCard">
+                            @if (_cardResult is null)
+                            {
+                                <span>刷身份证</span>
+                            }
+                            else
+                            {
+                                <span>重新读卡</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            }
+
+            @if (_step == 3 || _step == 4 || _step == 5)
+            {
+                <div class="va-form-grid">
+                    @foreach (var field in GetCurrentStepFields())
+                    {
+                        <div class="va-field @(IsFullWidth(field.Id) ? "va-full" : "")">
+                            <label>
+                                @L[field.LabelKey]
+                                @if (field.Required)
+                                {
+                                    <span class="va-req">@L["field.required"]</span>
+                                }
+                                else if (field.Id != "Notes")
+                                {
+                                    <span class="va-muted">@L["field.idnumber.optional"]</span>
+                                }
+                            </label>
+
+                            @if (field.Id == "Name")
+                            {
+                                <InputText class="va-input va-input-lg" @bind-Value="State.Current.Name"
+                                           placeholder="@L[field.PlaceholderKey]" />
+                                <ValidationMessage For="@(() => State.Current.Name)" />
+                            }
+                            else if (field.Id == "Phone")
+                            {
+                                <InputText class="va-input va-input-lg" @bind-Value="State.Current.Phone"
+                                           placeholder="@L[field.PlaceholderKey]" />
+                                <ValidationMessage For="@(() => State.Current.Phone)" />
+                            }
+                            else if (field.Id == "IdNumber")
+                            {
+                                <InputText class="va-input va-input-lg" @bind-Value="State.Current.IdNumber"
+                                           placeholder="@L[field.PlaceholderKey]" />
+                                <ValidationMessage For="@(() => State.Current.IdNumber)" />
+                            }
+                            else if (field.Id == "Company")
+                            {
+                                <InputText class="va-input va-input-lg" @bind-Value="State.Current.Company"
+                                           placeholder="@L[field.PlaceholderKey]" />
+                                <ValidationMessage For="@(() => State.Current.Company)" />
+                            }
+                            else if (field.Id == "CompanionList")
+                            {
+                                <div class="va-companions">
+                                    <div class="va-companion-add">
+                                        <input class="va-input" placeholder="@L["field.companion.name.placeholder"]"
+                                               maxlength="64" @bind="_companionName" />
+                                        <input class="va-input" placeholder="@L["field.companion.phone.placeholder"]"
+                                               maxlength="11" @bind="_companionPhone" />
+                                        <button type="button" class="va-btn va-btn-primary" @onclick="AddCompanionAsync">＋ @L["btn.add_companion"]</button>
+                                    </div>
+                                    @if (State.Current.CompanionList.Count > 0)
+                                    {
+                                        <div class="va-companion-rows">
+                                            @for (var i = 0; i < State.Current.CompanionList.Count; i++)
+                                            {
+                                                var idx = i;
+                                                var c = State.Current.CompanionList[idx];
+                                                <div class="va-companion-row">
+                                                    <strong>@c.Name</strong>
+                                                    <span>@c.Phone</span>
+                                                    <button type="button" class="va-btn va-btn-ghost va-btn-sm" @onclick="@(() => RemoveCompanion(idx))">✕</button>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="va-hint">@L["field.companions.empty"]</span>
+                                    }
+                                </div>
+                            }
+                            else if (field.Id == "HostName")
+                            {
+                                <div class="va-ac-wrap" @onfocusout="OnHostBlur">
+                                    <InputText class="va-input va-input-lg" @bind-Value="State.Current.HostName"
+                                               placeholder="@L[field.PlaceholderKey]"
+                                               @oninput="OnHostInput" @onfocus="OnHostFocusAsync"
+                                               autocomplete="off" />
+                                    @if (_hostPanelOpen)
+                                    {
+                                        <div class="va-ac-panel">
+                                            @if (_searchingHost && _employeeHits.Count == 0)
+                                            {
+                                                <div class="va-ac-empty">⏳ @L["field.host.searching"]</div>
+                                            }
+                                            else if (_employeeHits.Count == 0)
+                                            {
+                                                <div class="va-ac-empty">未找到匹配的员工</div>
+                                            }
+                                            else
+                                            {
+                                                <span class="va-muted va-ac-count">共 @_employeeHits.Count 位员工</span>
+                                                @foreach (var emp in _employeeHits.Take(12))
+                                                {
+                                                    var hit = emp;
+                                                    <button type="button" class="va-ac-item" @onclick="@(() => OnHostPickAsync(hit))">
+                                                        <strong>@hit.StaffName</strong>
+                                                        <span>@hit.DepartmentName@(string.IsNullOrWhiteSpace(hit.Mobile) ? "" : " · " + hit.Mobile)</span>
+                                                    </button>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                    <ValidationMessage For="@(() => State.Current.HostName)" />
+                                </div>
+                            }
+                            else if (field.Id == "HostDepartment")
+                            {
+                                <InputText class="va-input va-input-lg" @bind-Value="State.Current.HostDepartment"
+                                           placeholder="@L[field.PlaceholderKey]" />
+                                <ValidationMessage For="@(() => State.Current.HostDepartment)" />
+                            }
+                            else if (field.Id == "VisitStart")
+                            {
+                                <DatePicker @bind-Value="State.Current.VisitStartTime"
+                                            ShowTime="@true"
+                                            Format="yyyy-MM-dd HH:mm"
+                                            Placeholder="@L["field.visitstart"]"
+                                            Style="width: 100%" />
+                            }
+                            else if (field.Id == "VisitEnd")
+                            {
+                                <DatePicker @bind-Value="State.Current.VisitEndTime"
+                                            ShowTime="@true"
+                                            Format="yyyy-MM-dd HH:mm"
+                                            Placeholder="@L["field.visitend"]"
+                                            Style="width: 100%" />
+                            }
+                            else if (field.Id == "Purpose")
+                            {
+                                @if (_visitReasons.Count > 0)
+                                {
+                                    <Select TItem="VisitReasonInfo" TItemValue="string"
+                                            DataSource="@_visitReasons"
+                                            @bind-Value="State.Current.Purpose"
+                                            ValueName="@nameof(VisitReasonInfo.VisitReasonName)"
+                                            LabelName="@nameof(VisitReasonInfo.VisitReasonName)"
+                                            Disabled="@_loadingOptions"
+                                            Style="width: 100%" />
+                                }
+                                else
+                                {
+                                    <InputTextArea class="va-input va-textarea" @bind-Value="State.Current.Purpose"
+                                                   placeholder="@L[field.PlaceholderKey]" disabled="@_loadingOptions" />
+                                    <ValidationMessage For="@(() => State.Current.Purpose)" />
+                                }
+                            }
+                            else if (field.Id == "VisitPlace")
+                            {
+                                @if (_visitPlaces.Count > 0)
+                                {
+                                    <Select TItem="VisitorPlace" TItemValue="int"
+                                            DataSource="@_visitPlaces"
+                                            Value="@State.Current.VisitPlaceId"
+                                            ValueChanged="OnPlaceIdChanged"
+                                            ValueName="@nameof(VisitorPlace.VisitorPlaceID)"
+                                            LabelName="@nameof(VisitorPlace.VisitorPlaceName)"
+                                            Disabled="@_loadingOptions"
+                                            Style="width: 100%" />
+                                }
+                                else
+                                {
+                                    <InputText class="va-input va-input-lg" @bind-Value="State.Current.VisitPlaceName"
+                                               placeholder="@L["field.visitplace.placeholder"]" disabled="@_loadingOptions" />
+                                }
+                            }
+                            else if (field.Id == "Notes")
+                            {
+                                <InputTextArea class="va-input va-textarea" @bind-Value="State.Current.Notes"
+                                               placeholder="@L[field.PlaceholderKey]" />
+                            }
+
+                            @{
+                                var hintKey = field.HintKey;
+                            }
+                            @if (hintKey is not null)
+                            {
+                                <span class="va-hint">@L[hintKey]</span>
+                            }
+                            @if (_loadingOptions && (field.Id == "Purpose" || field.Id == "VisitPlace"))
+                            {
+                                <span class="va-hint">⏳ @L["field.options.loading"]</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(State.Current.Address) && field.Id == "IdNumber")
+                            {
+                                <span class="va-hint">@State.Current.Address</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_step == 2)
+            {
+                <div class="va-face-pane">
+                    <h3 class="va-scan-title">@L["face.title"] <span class="va-req">@L["field.required"]</span></h3>
+                    <div class="va-face-stage">
+                        @if (!string.IsNullOrEmpty(State.Current.FacePhoto))
+                        {
+                            <img class="va-face-preview" src="@State.Current.FacePhoto" alt="Face" />
+                            <div class="va-face-tag va-badge va-badge-success">✓ @L["face.captured"]</div>
+                        }
+                        else if (!_cameraActive)
+                        {
+                            <div class="va-face-placeholder">
+                                <svg width="96" height="96" viewBox="0 0 96 96" fill="none">
+                                    <circle cx="48" cy="40" r="20" stroke="#94a3b8" stroke-width="2" />
+                                    <path d="M16 88c4-18 18-26 32-26s28 8 32 26" stroke="#94a3b8" stroke-width="2"
+                                          stroke-linecap="round" fill="none" />
+                                </svg>
+                            </div>
+                        }
+                        else
+                        {
+                            <CameraPreview @ref="_cameraPreview" />
+                        }
+                        @if (_capturingFace)
+                        {
+                            <div class="va-scan-overlay">
+                                <div class="va-spinner"></div>
+                            </div>
+                        }
+                    </div>
+                    <div class="va-scan-actions">
+                        @if (string.IsNullOrEmpty(State.Current.FacePhoto))
+                        {
+                            @if (!_cameraActive)
+                            {
+                                <button type="button" class="va-btn va-btn-primary va-btn-lg" @onclick="StartCameraAsync" disabled="@_capturingFace">
+                                    @L["btn.capture_face"]
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="va-btn va-btn-success va-btn-lg" @onclick="CaptureFaceFrameAsync" disabled="@_capturingFace">
+                                    ⏹️ 拍摄
+                                </button>
+                                <button type="button" class="va-btn va-btn-ghost va-btn-lg" @onclick="StopCameraAsync">
+                                    取消
+                                </button>
+                            }
+                        }
+                        else
+                        {
+                            <button type="button" class="va-btn va-btn-primary va-btn-lg" @onclick="StartCameraAsync">
+                                @L["btn.rescan"]
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="va-form-actions">
+                @if (_step > 1)
+                {
+                    <button type="button" class="va-btn va-btn-ghost va-btn-lg" @onclick="Prev">@L["btn.prev"]</button>
+                }
+                else
+                {
+                    <button type="button" class="va-btn va-btn-ghost va-btn-lg" @onclick="BackToConsent">@L["btn.back_consent"]</button>
+                }
+
+                @if (_step < 5)
+                {
+                    <button type="button" class="va-btn va-btn-primary va-btn-lg" @onclick="Next">@L["btn.next"]</button>
+                }
+                else
+                {
+                    <button type="submit" class="va-btn va-btn-primary va-btn-lg" disabled="@_submitting">
+                        @if (_submitting)
+                        {
+                            <span>@L["btn.submitting"]</span>
+                        }
+                        else
+                        {
+                            <span>@L["btn.submit"]</span>
+                        }
+                    </button>
+                }
+            </div>
+        </EditForm>
+    </div>
+</section>
+
+<Toast @ref="_toast" />
+
+@code {
+    private int _step = 1;
+    private bool _submitting;
+    private Toast? _toast;
+
+    private record FormField(string Id, string LabelKey, string PlaceholderKey, string? HintKey = null, bool Required = false, int? Min = null, int? Max = null);
+
+    private static string StepTitleKey(int i) => i switch
+    {
+        0 => "sub.scan",
+        1 => "sub.face",
+        2 => "sub.basic",
+        3 => "sub.company",
+        4 => "sub.visit",
+        _ => string.Empty
+    };
+
+    private List<FormField> GetCurrentStepFields() => _step switch
+    {
+        3 => new()
+        {
+            new("Name", "field.name", "field.name.placeholder", Required: true),
+            new("Phone", "field.phone", "field.phone.placeholder", "field.phone.hint", Required: true),
+            new("IdNumber", "field.idnumber", "field.idnumber.placeholder")
+        },
+        4 => new()
+        {
+            new("Company", "field.company", "field.company.placeholder"),
+            new("CompanionList", "field.companions", "", "field.companions.hint")
+        },
+        5 => new()
+        {
+            new("HostName", "field.host", "field.host.placeholder", "field.host.searching", Required: true),
+            new("VisitStart", "field.visitstart", "", Required: true),
+            new("VisitEnd", "field.visitend", "", Required: true),
+            new("HostDepartment", "field.department", "field.department.placeholder"),
+            new("Purpose", "field.purpose", "field.purpose.placeholder", Required: true),
+            new("VisitPlace", "field.visitplace", "", Required: true),
+            new("Notes", "field.notes", "field.notes.placeholder")
+        },
+        _ => new()
+    };
+
+    private static bool IsFullWidth(string id) =>
+        id == "Purpose" || id == "VisitPlace" || id == "Notes" || id == "HostName" || id == "CompanionList";
+
+    private bool _readingCard;
+    private IdCardReadResult? _cardResult;
+    private bool _capturingFace;
+    private bool _cameraActive;
+    private CameraPreview? _cameraPreview;
+    private bool _searchingHost;
+    private List<StaffInfo> _employeeHits = new();
+    private CancellationTokenSource? _hostSearchCts;
+    private CancellationTokenSource? _panelCloseCts;
+    private bool _hostPanelOpen;
+    private StaffInfo? _pickedStaff;
+
+    private List<VisitReasonInfo> _visitReasons = new();
+    private List<VisitorPlace> _visitPlaces = new();
+    private bool _loadingOptions;
+
+    protected override void OnInitialized()
+    {
+        if (!State.Current.ConsentAccepted) Nav.NavigateTo("consent");
+        L.OnLanguageChanged += OnLang;
+        _ = LoadOptionsAsync();
+    }
+
+    /// <summary>加载来访事由 / 访问地点选项（填写时调用后端的两个字典接口），有选项时默认勾选首项。</summary>
+    private async Task LoadOptionsAsync(bool force = false)
+    {
+        if (_loadingOptions) return;
+        if (!force && _visitReasons.Count > 0 && _visitPlaces.Count > 0) return;
+
+        _loadingOptions = true; StateHasChanged();
+        var reasonsTask = RegService.GetVisitReasonsAsync();
+        var placesTask = RegService.GetVisitPlacesAsync();
+        try { _visitReasons = await reasonsTask; }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Kernel] 来访事由加载失败：{ex.Message}"); }
+        try { _visitPlaces = await placesTask; }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Kernel] 访问地点加载失败：{ex.Message}"); }
+        _loadingOptions = false;
+
+        if (_visitReasons.Count > 0 && string.IsNullOrWhiteSpace(State.Current.Purpose))
+            State.Current.Purpose = _visitReasons[0].VisitReasonName;
+        if (_visitPlaces.Count > 0 && State.Current.VisitPlaceId <= 0)
+        {
+            var first = _visitPlaces[0];
+            State.Current.VisitPlaceId = first.VisitorPlaceID;
+            State.Current.VisitPlaceName = first.VisitorPlaceName;
+        }
+        StateHasChanged();
+    }
+
+    private void OnLang() => InvokeAsync(StateHasChanged);
+
+    /// <summary>AntDesign 下拉选中访问地点：同步记录分组 ID 与名称（名称随登记单提交）。</summary>
+    private void OnPlaceIdChanged(int id)
+    {
+        State.Current.VisitPlaceId = id;
+        State.Current.VisitPlaceName = _visitPlaces.FirstOrDefault(p => p.VisitorPlaceID == id)?.VisitorPlaceName ?? string.Empty;
+    }
+
+    private string CurrentStepTitle() => L[StepTitleKey(_step - 1)];
+
+    private string SubClass(int i)
+    {
+        if (i < _step - 1) return "va-sub-done";
+        if (i == _step - 1) return "va-sub-active";
+        return string.Empty;
+    }
+
+    private async Task ReadIdCardAsync()
+    {
+        try
+        {
+            _readingCard = true; _cardResult = null; StateHasChanged();
+            var result = await IdCardReader.ReadIdCardAsync();
+            _readingCard = false;
+            if (result is null)
+            {
+                if (_toast is not null) await _toast.ShowAsync("读卡失败，请确认身份证已放置好", "error", 3000);
+                return;
+            }
+            _cardResult = result;
+            ApplyCardToForm(result);
+            if (_toast is not null) await _toast.ShowAsync("读卡成功", "success", 2000);
+        }
+        catch (Exception ex)
+        {
+            _readingCard = false;
+            if (_toast is not null) await _toast.ShowAsync(ex.Message, "error", 3500);
+        }
+        finally { _readingCard = false; StateHasChanged(); }
+    }
+
+    private void ApplyCardToForm(IdCardReadResult card)
+    {
+        if (string.IsNullOrWhiteSpace(State.Current.Name)) State.Current.Name = card.Name;
+        State.Current.IdNumber = card.IdNumber;
+        State.Current.Gender = card.Gender;
+        State.Current.Birthday = card.Birthday;
+        State.Current.Address = card.Address;
+        State.Current.IssuingAuthority = card.IssuingAuthority;
+        State.Current.IdValidity = $"{card.StartDate} ~ {card.EndDate}";
+        // 保存证件照
+        if (card.PhotoBase64 is not null) State.Current.IdCardPhoto = card.PhotoBase64;
+    }
+
+    private void StartCameraAsync()
+    {
+        _cameraActive = true;
+        State.Current.FacePhoto = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task StopCameraAsync()
+    {
+        if (_cameraPreview is not null) await _cameraPreview.StopCameraAsync();
+        _cameraActive = false; StateHasChanged();
+    }
+
+    private async Task CaptureFaceFrameAsync()
+    {
+        try
+        {
+            if (_cameraPreview is null)
+            { if (_toast is not null) await _toast.ShowAsync("摄像头未就绪", "error", 2000); return; }
+            _capturingFace = true; StateHasChanged();
+            var dataUrl = await _cameraPreview.CaptureFrameAsync();
+            if (string.IsNullOrEmpty(dataUrl))
+            { if (_toast is not null) await _toast.ShowAsync("未获取到有效帧", "error", 2000); return; }
+            State.Current.FacePhoto = dataUrl;
+            await StopCameraAsync();
+            if (_toast is not null) await _toast.ShowAsync(L["face.captured"], "success", 2000);
+        }
+        catch (Exception ex)
+        { if (_toast is not null) await _toast.ShowAsync(ex.Message, "error", 3500); }
+        finally { _capturingFace = false; StateHasChanged(); }
+    }
+
+    /// <summary>输入即搜（150ms 防抖）：按姓名 / 手机号模糊匹配，百度式联想下拉。</summary>
+    private async Task OnHostInput(ChangeEventArgs e)
+    {
+        var keyword = e.Value?.ToString() ?? string.Empty;
+        State.Current.HostName = keyword;
+        _pickedStaff = null; // 一旦修改文字（含退格），解除“已选中”状态，恢复联想搜索。
+        _panelCloseCts?.Cancel();
+        _hostPanelOpen = true;
+
+        _hostSearchCts?.Cancel();
+        _hostSearchCts = new CancellationTokenSource();
+        var token = _hostSearchCts.Token;
+        try
+        {
+            await Task.Delay(150, token);
+            _searchingHost = true; StateHasChanged();
+            _employeeHits = await RegService.SearchHostsAsync(keyword, token);
+        }
+        catch (TaskCanceledException) { }
+        catch { _employeeHits = new(); }
+        finally { _searchingHost = false; StateHasChanged(); }
+    }
+
+    /// <summary>聚焦输入框展开面板；未输入时预加载默认员工目录（首页 50 人）供直接挑选。</summary>
+    private async Task OnHostFocusAsync()
+    {
+        _panelCloseCts?.Cancel();
+
+        // 已选中某位员工后再次聚焦：只回显该员工，不重新触发搜索；
+        // 退格 / 输入修改文字后才恢复联想（见 OnHostInput）。
+        if (_pickedStaff is not null && State.Current.HostName == _pickedStaff.StaffName)
+        {
+            _employeeHits = new List<StaffInfo> { _pickedStaff };
+            _hostPanelOpen = true;
+            StateHasChanged();
+            return;
+        }
+
+        _hostPanelOpen = true;
+        if (!string.IsNullOrWhiteSpace(State.Current.HostName) || _employeeHits.Count > 0 || _searchingHost)
+        {
+            StateHasChanged();
+            return;
+        }
+        _searchingHost = true; StateHasChanged();
+        try { _employeeHits = await RegService.SearchHostsAsync(string.Empty); }
+        catch { }
+        finally { _searchingHost = false; StateHasChanged(); }
+    }
+
+    /// <summary>失焦时延迟收起下拉面板（给点击候选项留出时间）。</summary>
+    private void OnHostBlur(FocusEventArgs e)
+    {
+        _panelCloseCts?.Cancel();
+        _panelCloseCts = new CancellationTokenSource();
+        var token = _panelCloseCts.Token;
+        _ = Task.Delay(220).ContinueWith(_ =>
+        {
+            if (token.IsCancellationRequested) return;
+            _ = InvokeAsync(() => { _hostPanelOpen = false; StateHasChanged(); });
+        });
+    }
+
+    /// <summary>
+    /// 点选某位员工：列表接口已返回完整档案（姓名/部门/手机/工号/ID），直接采用并回填，
+    /// 不再按工号回查详情——回查结果与列表不一致时会把选择覆盖成错误的员工。
+    /// </summary>
+    private void OnHostPickAsync(StaffInfo emp)
+    {
+        _panelCloseCts?.Cancel();
+        _hostPanelOpen = false;
+        _hostSearchCts?.Cancel();
+        _employeeHits = new();
+        _pickedStaff = emp;
+
+        State.Current.HostName = emp.StaffName;
+        State.Current.HostDepartment = emp.DepartmentName;
+        State.Current.HostStaffId = emp.StaffID;
+        State.Current.HostStaffNo = emp.StaffNo;
+        State.Current.HostMobile = emp.Mobile ?? string.Empty;
+        StateHasChanged();
+    }
+
+    private string _companionName = string.Empty;
+    private string _companionPhone = string.Empty;
+
+    /// <summary>添加随行人员：校验姓名 / 手机号后加入列表，提交时一并进入登记单 Visitors。</summary>
+    private async Task AddCompanionAsync()
+    {
+        var name = _companionName?.Trim() ?? string.Empty;
+        var phone = _companionPhone?.Trim() ?? string.Empty;
+
+        if (name.Length == 0)
+        {
+            if (_toast is not null) await _toast.ShowAsync("请输入同行人员姓名", "error");
+            return;
+        }
+        if (!System.Text.RegularExpressions.Regex.IsMatch(phone, @"^1[3-9]\d{9}$"))
+        {
+            if (_toast is not null) await _toast.ShowAsync("请输入正确的同行人员手机号", "error");
+            return;
+        }
+        if (phone == State.Current.Phone)
+        {
+            if (_toast is not null) await _toast.ShowAsync("同行人员手机号不能与访客本人相同", "error");
+            return;
+        }
+        if (State.Current.CompanionList.Any(c => c.Phone == phone))
+        {
+            if (_toast is not null) await _toast.ShowAsync("该手机号的同行人员已添加", "error");
+            return;
+        }
+
+        State.Current.CompanionList.Add(new CompanionInfo { Name = name, Phone = phone });
+        State.Current.Companions = State.Current.CompanionList.Count;
+        _companionName = string.Empty;
+        _companionPhone = string.Empty;
+    }
+
+    private void RemoveCompanion(int index)
+    {
+        if (index < 0 || index >= State.Current.CompanionList.Count) return;
+        State.Current.CompanionList.RemoveAt(index);
+        State.Current.Companions = State.Current.CompanionList.Count;
+    }
+
+    private void Next()
+    {
+        // 第 2 步为拍照：必须完成拍摄才能继续。
+        if (_step == 2 && string.IsNullOrEmpty(State.Current.FacePhoto))
+        {
+            _toast?.ShowAsync("请先拍摄现场人脸照片", "error");
+            return;
+        }
+        if (_step >= 3 && _step <= 5 && !ValidateCurrentStep()) return;
+        _step = Math.Min(5, _step + 1);
+        // 进入"来访信息"步时若选项仍为空（首次加载时接口未就绪），填写时重试一次。
+        if (_step == 5) _ = LoadOptionsAsync(force: true);
+    }
+
+    private bool ValidateCurrentStep()
+    {
+        var fields = GetCurrentStepFields();
+        foreach (var field in fields)
+        {
+            if (!field.Required) continue;
+            switch (field.Id)
+            {
+                case "Name" when string.IsNullOrWhiteSpace(State.Current.Name):
+                case "Phone" when string.IsNullOrWhiteSpace(State.Current.Phone)
+                    || !System.Text.RegularExpressions.Regex.IsMatch(State.Current.Phone ?? "", @"^1[3-9]\d{9}$"):
+                    _toast?.ShowAsync(L["toast.fill_phone"], "error"); return false;
+                case "HostName" when string.IsNullOrWhiteSpace(State.Current.HostName):
+                    _toast?.ShowAsync("请填写被访人", "error"); return false;
+                case "Purpose" when string.IsNullOrWhiteSpace(State.Current.Purpose):
+                    _toast?.ShowAsync("请填写来访事由", "error"); return false;
+                case "VisitEnd" when State.Current.VisitEndTime <= State.Current.VisitStartTime:
+                    _toast?.ShowAsync("访问结束时间必须晚于开始时间", "error"); return false;
+                case "VisitPlace" when State.Current.VisitPlaceId <= 0 && string.IsNullOrWhiteSpace(State.Current.VisitPlaceName):
+                    _toast?.ShowAsync("请选择或填写访问地点", "error"); return false;
+            }
+        }
+        return true;
+    }
+
+    private void Prev() => _step = Math.Max(1, _step - 1);
+    private void BackToConsent() => Nav.NavigateTo("consent");
+
+    private async Task HandleSubmitAsync()
+    {
+        if (_submitting) return;
+        _submitting = true;
+        try
+        {
+            // 走真实后端契约：创建登记单(iVisitorAppointment) + 立即签到(VisitorCheckIn)
+            var outcome = await RegService.SubmitRegistrationAsync(State.Current);
+            if (!outcome.Success)
+            {
+                if (_toast is not null)
+                    await _toast.ShowAsync(L.Format("toast.api_failed", outcome.Message), "error", 3500);
+                return;
+            }
+
+            // 本地镜像一份，供成功凭证 / 签退 / 我的来访使用，并回填后端登记单号。
+            var code = VisitorFormState.GenerateVisitCode();
+            var visitor = State.Current.ToVisitor(code);
+            visitor.SheetId = outcome.SheetId;
+            visitor.Status = outcome.CheckedIn ? VisitStatus.CheckedIn : VisitStatus.CheckedIn;
+            await Db.SaveAsync(visitor);
+            State.LastSubmitted = visitor;
+
+            if (_toast is not null) await _toast.ShowAsync(outcome.Message);
+            if (outcome.SheetId > 0 && _toast is not null)
+                _ = _toast.ShowAsync(L.Format("toast.api_ticket", outcome.SheetId.ToString()), "success", 2500);
+
+            await Task.Delay(500);
+            Nav.NavigateTo($"success/{visitor.Id}");
+        }
+        catch (Exception ex)
+        {
+            if (_toast is not null)
+                await _toast.ShowAsync(L.Format("toast.api_failed", ex.Message), "error", 3500);
+        }
+        finally { _submitting = false; }
+    }
+
+    public void Dispose()
+    {
+        _hostSearchCts?.Cancel();
+        _panelCloseCts?.Cancel();
+        L.OnLanguageChanged -= OnLang;
+    }
+}

@@ -1,0 +1,89 @@
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject NavigationManager Nav
+@inject LocalizationService L
+
+<div class="va-shell">
+    <header class="va-top">
+        <a class="va-brand" href="">
+            <span class="va-logo">访</span>
+            <div class="va-brand-text">
+                <strong>智能访客自助登记</strong>
+                <span>@L["app.subtitle"]</span>
+            </div>
+        </a>
+        <div class="va-top-right">
+            <div class="va-clock">
+                <span class="va-time">@_now.ToString("HH:mm:ss")</span>
+                <span class="va-date">@_now.ToString(L.CurrentLanguage == "en-US" ? "dddd, MMM d yyyy" : "yyyy 年 MM 月 dd 日 dddd", System.Globalization.CultureInfo.GetCultureInfo(L.CurrentLanguage))</span>
+            </div>
+            <LanguageSwitcher />
+            @if (!IsSettings)
+            {
+                <a class="va-btn va-btn-ghost" href="settings" title="系统设置">⚙</a>
+            }
+            @if (!IsHome)
+            {
+                <a class="va-btn va-btn-ghost" href="">@L["app.back_home"]</a>
+            }
+        </div>
+    </header>
+
+    <main class="va-main">
+        @Body
+    </main>
+
+    <footer class="va-foot">
+        <span>@L["app.footer.contact"]</span>
+        <span>@L["app.footer.version"]</span>
+    </footer>
+</div>
+
+<AntContainer />
+
+@code {
+    private DateTime _now = DateTime.Now;
+    private System.Threading.Timer? _timer;
+
+    private bool IsHome
+    {
+        get
+        {
+            var uri = new Uri(Nav.Uri);
+            return string.IsNullOrEmpty(uri.AbsolutePath.Trim('/'));
+        }
+    }
+
+    private bool IsSettings
+    {
+        get
+        {
+            var uri = new Uri(Nav.Uri);
+            return uri.AbsolutePath.Trim('/').Equals("settings", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _timer = new System.Threading.Timer(_ =>
+        {
+            _now = DateTime.Now;
+            InvokeAsync(StateHasChanged);
+        }, null, 1000, 1000);
+
+        Nav.LocationChanged += OnLocationChanged;
+        L.OnLanguageChanged += OnLangChanged;
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        Nav.LocationChanged -= OnLocationChanged;
+        L.OnLanguageChanged -= OnLangChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => InvokeAsync(StateHasChanged);
+
+    private void OnLangChanged() => InvokeAsync(StateHasChanged);
+}

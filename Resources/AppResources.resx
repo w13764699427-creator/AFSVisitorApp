@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="app.title" xml:space="preserve"><value>智能访客自助登记</value></data>
+  <data name="app.subtitle" xml:space="preserve"><value>Visitor Self-Service Kiosk</value></data>
+  <data name="app.back_home" xml:space="preserve"><value>↩ 返回首页</value></data>
+  <data name="app.footer.contact" xml:space="preserve"><value>如有疑问，请联系前台 · Tel · 9999</value></data>
+  <data name="app.footer.version" xml:space="preserve"><value>v 1.0.0 · 本地化部署</value></data>
+  <data name="app.language" xml:space="preserve"><value>语言</value></data>
+  <data name="home.hero.tag" xml:space="preserve"><value>VISITOR · KIOSK</value></data>
+  <data name="home.hero.title.prefix" xml:space="preserve"><value>欢迎来到</value></data>
+  <data name="home.hero.title.brand" xml:space="preserve"><value>智能访客自助系统</value></data>
+  <data name="home.hero.desc" xml:space="preserve"><value>请在屏幕上完成自助登记，整个过程通常仅需 30 秒。您填写的所有信息都将受到严格的隐私保护。</value></data>
+  <data name="home.stats.today" xml:space="preserve"><value>今日已接待</value></data>
+  <data name="home.stats.onsite" xml:space="preserve"><value>当前在场</value></data>
+  <data name="home.stats.avg" xml:space="preserve"><value>平均用时</value></data>
+  <data name="home.stats.weekly" xml:space="preserve"><value>本周累计</value></data>
+  <data name="home.stats.suffix.persons" xml:space="preserve"><value>人</value></data>
+  <data name="home.stats.suffix.seconds" xml:space="preserve"><value>s</value></data>
+  <data name="home.action.register" xml:space="preserve"><value>访客登记</value></data>
+  <data name="home.action.register.hint" xml:space="preserve"><value>首次来访请点击这里完成登记</value></data>
+  <data name="home.action.checkout" xml:space="preserve"><value>离场签退</value></data>
+  <data name="home.action.checkout.hint" xml:space="preserve"><value>完成访问后请来此签退</value></data>
+  <data name="home.action.history" xml:space="preserve"><value>查询记录</value></data>
+  <data name="home.action.history.hint" xml:space="preserve"><value>查看本机最近 30 条登记记录</value></data>
+  <data name="home.tip.title" xml:space="preserve"><value>友情提示</value></data>
+  <data name="home.tip.desc" xml:space="preserve"><value>请准备好被访人姓名 / 部门信息，便于您快速完成登记；如需协助，请联系前台工作人员。</value></data>
+  <data name="step.consent" xml:space="preserve"><value>隐私同意</value></data>
+  <data name="step.info" xml:space="preserve"><value>信息填写</value></data>
+  <data name="step.done" xml:space="preserve"><value>登记完成</value></data>
+  <data name="sub.scan" xml:space="preserve"><value>证件扫描</value></data>
+  <data name="sub.basic" xml:space="preserve"><value>基本信息</value></data>
+  <data name="sub.company" xml:space="preserve"><value>单位 / 同行</value></data>
+  <data name="sub.visit" xml:space="preserve"><value>来访信息</value></data>
+  <data name="sub.face" xml:space="preserve"><value>人脸拍照</value></data>
+  <data name="btn.prev" xml:space="preserve"><value>← 上一步</value></data>
+  <data name="btn.next" xml:space="preserve"><value>下一步 →</value></data>
+  <data name="btn.submit" xml:space="preserve"><value>✓ 提交登记</value></data>
+  <data name="btn.submitting" xml:space="preserve"><value>正在提交…</value></data>
+  <data name="btn.skip" xml:space="preserve"><value>暂不识别，手动填写</value></data>
+  <data name="btn.scan" xml:space="preserve"><value>📷 拍摄身份证</value></data>
+  <data name="btn.rescan" xml:space="preserve"><value>重新拍摄</value></data>
+  <data name="btn.capture_face" xml:space="preserve"><value>📸 拍摄人脸</value></data>
+  <data name="btn.cancel" xml:space="preserve"><value>取消</value></data>
+  <data name="btn.continue" xml:space="preserve"><value>同意并继续 →</value></data>
+  <data name="btn.back_consent" xml:space="preserve"><value>← 重新同意</value></data>
+  <data name="btn.retry" xml:space="preserve"><value>重试</value></data>
+  <data name="scan.title" xml:space="preserve"><value>拍摄身份证（正面）</value></data>
+  <data name="scan.tip" xml:space="preserve"><value>请将身份证正面对准摄像头，确保四角清晰、无反光，光线均匀。</value></data>
+  <data name="scan.recognizing" xml:space="preserve"><value>正在识别证件信息…</value></data>
+  <data name="scan.success" xml:space="preserve"><value>识别成功，已为您自动填写以下字段：</value></data>
+  <data name="scan.confidence" xml:space="preserve"><value>置信度 {0}%</value></data>
+  <data name="scan.field.name" xml:space="preserve"><value>姓名</value></data>
+  <data name="scan.field.gender" xml:space="preserve"><value>性别</value></data>
+  <data name="scan.field.birthday" xml:space="preserve"><value>出生</value></data>
+  <data name="scan.field.idnumber" xml:space="preserve"><value>证件号</value></data>
+  <data name="scan.field.address" xml:space="preserve"><value>住址</value></data>
+  <data name="scan.field.authority" xml:space="preserve"><value>签发机关</value></data>
+  <data name="scan.field.validity" xml:space="preserve"><value>有效期</value></data>
+  <data name="scan.fail.lowq" xml:space="preserve"><value>图片质量过低，请重试</value></data>
+  <data name="scan.fail.notid" xml:space="preserve"><value>未识别到身份证</value></data>
+  <data name="scan.fail.net" xml:space="preserve"><value>网络异常，请稍后重试</value></data>
+  <data name="face.title" xml:space="preserve"><value>拍摄现场人脸</value></data>
+  <data name="face.tip" xml:space="preserve"><value>请正对摄像头，确保脸部完整、光线明亮，无遮挡。本照片仅用于本次访问凭证核验。</value></data>
+  <data name="face.captured" xml:space="preserve"><value>已采集人脸照片</value></data>
+  <data name="face.optional" xml:space="preserve"><value>（可选，若前台未要求可跳过）</value></data>
+  <data name="field.name" xml:space="preserve"><value>姓名</value></data>
+  <data name="field.name.placeholder" xml:space="preserve"><value>请输入真实姓名</value></data>
+  <data name="field.phone" xml:space="preserve"><value>手机号</value></data>
+  <data name="field.phone.placeholder" xml:space="preserve"><value>11 位中国大陆手机号</value></data>
+  <data name="field.phone.hint" xml:space="preserve"><value>用于身份核验与紧急联系</value></data>
+  <data name="field.idnumber" xml:space="preserve"><value>身份证号</value></data>
+  <data name="field.idnumber.optional" xml:space="preserve"><value>（可选）</value></data>
+  <data name="field.idnumber.placeholder" xml:space="preserve"><value>如前台未要求可留空</value></data>
+  <data name="field.company" xml:space="preserve"><value>来访单位</value></data>
+  <data name="field.company.placeholder" xml:space="preserve"><value>如 ACME 科技有限公司</value></data>
+  <data name="field.companions" xml:space="preserve"><value>随行人员</value></data>
+  <data name="field.companions.hint" xml:space="preserve"><value>填写姓名和手机号后点「添加」，不含您本人</value></data>
+  <data name="field.companion.name.placeholder" xml:space="preserve"><value>随行人员姓名</value></data>
+  <data name="field.companion.phone.placeholder" xml:space="preserve"><value>随行人员手机号</value></data>
+  <data name="field.companions.empty" xml:space="preserve"><value>暂无随行人员，可直接下一步</value></data>
+  <data name="btn.add_companion" xml:space="preserve"><value>添加</value></data>
+  <data name="field.host" xml:space="preserve"><value>被访人</value></data>
+  <data name="field.host.placeholder" xml:space="preserve"><value>被访员工姓名</value></data>
+  <data name="field.host.searching" xml:space="preserve"><value>正在匹配员工目录…</value></data>
+  <data name="field.host.suggestions" xml:space="preserve"><value>建议：</value></data>
+  <data name="field.department" xml:space="preserve"><value>被访部门</value></data>
+  <data name="field.department.placeholder" xml:space="preserve"><value>如 研发部 / 销售部</value></data>
+  <data name="field.purpose" xml:space="preserve"><value>来访事由</value></data>
+  <data name="field.purpose.placeholder" xml:space="preserve"><value>例如：项目沟通 / 商务洽谈 / 设备维修 / 面试</value></data>
+  <data name="field.visitplace" xml:space="preserve"><value>访问地点</value></data>
+  <data name="field.visitplace.placeholder" xml:space="preserve"><value>请输入访问地点，如：一楼大厅 / 三楼会议室</value></data>
+  <data name="field.visitstart" xml:space="preserve"><value>访问开始时间</value></data>
+  <data name="field.visitend" xml:space="preserve"><value>访问结束时间</value></data>
+  <data name="field.options.loading" xml:space="preserve"><value>正在获取选项…</value></data>
+  <data name="field.notes" xml:space="preserve"><value>备注</value></data>
+  <data name="field.notes.placeholder" xml:space="preserve"><value>如携带物品、特殊事项等</value></data>
+  <data name="field.required" xml:space="preserve"><value>*</value></data>
+  <data name="consent.title" xml:space="preserve"><value>访客信息处理告知</value></data>
+  <data name="consent.subtitle" xml:space="preserve"><value>在继续登记之前，请阅读以下隐私条款。</value></data>
+  <data name="consent.check" xml:space="preserve"><value>我已阅读并同意上述告知，自愿提交登记信息</value></data>
+  <data name="consent.alert" xml:space="preserve"><value>请先勾选同意后再继续。</value></data>
+  <data name="toast.fill_phone" xml:space="preserve"><value>请先正确填写姓名与手机号</value></data>
+  <data name="toast.submitted" xml:space="preserve"><value>登记成功！正在生成访客凭证…</value></data>
+  <data name="toast.api_ticket" xml:space="preserve"><value>服务端回执：{0}</value></data>
+  <data name="toast.api_failed" xml:space="preserve"><value>登记失败：{0}</value></data>
+  <data name="toast.no_camera" xml:space="preserve"><value>当前设备不支持拍照，将打开相册选择</value></data>
+  <data name="toast.permission_denied" xml:space="preserve"><value>未授予摄像头权限，请到系统设置中开启</value></data>
+  <data name="camera.initializing" xml:space="preserve"><value>正在初始化摄像头…</value></data>
+  <data name="camera.loading" xml:space="preserve"><value>正在加载摄像头预览…</value></data>
+  <data name="camera.not_supported" xml:space="preserve"><value>当前设备不支持摄像头功能</value></data>
+  <data name="camera.service_not_available" xml:space="preserve"><value>摄像头服务不可用</value></data>
+  <data name="consent.body" xml:space="preserve"><value>&lt;p&gt;为了保障园区/办公区域的安全，我们将在您本次来访期间，收集并使用以下信息：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;基本信息：&lt;strong&gt;姓名、手机号&lt;/strong&gt;（必填，用于身份核验与紧急联系）。&lt;/li&gt;
+&lt;li&gt;来访信息：&lt;strong&gt;来访单位、被访人、被访部门、来访事由、同行人数&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;可选信息：&lt;strong&gt;身份证号&lt;/strong&gt;（仅在前台要求时填写，用于实名登记）。&lt;/li&gt;
+&lt;li&gt;系统自动记录：登记时间、离场时间。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;您的信息将仅用于&lt;strong&gt;访客接待与安全管理&lt;/strong&gt;，不会用于商业用途；我们将根据所在地法律法规要求安全保存，不再需要时予以销毁。您可在离场后随时联系前台要求删除您的访问记录。&lt;/p&gt;</value></data>
+</root>

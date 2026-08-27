@@ -1,0 +1,112 @@
+﻿@page "/"
+@inject NavigationManager Nav
+@inject VisitorFormState State
+@inject IMockApiService Api
+@inject LocalizationService L
+@implements IDisposable
+
+<PageTitle>智能访客自助登记</PageTitle>
+
+<section class="va-welcome">
+    <div class="va-hero">
+        <div class="va-hero-inner">
+            <span class="va-hero-pill">@L["home.hero.tag"]</span>
+            <h1>@L["home.hero.title.prefix"] <span class="va-accent">@L["home.hero.title.brand"]</span></h1>
+            <p class="va-hero-sub">@L["home.hero.desc"]</p>
+
+            <div class="va-stat-grid">
+                <div class="va-stat">
+                    <span class="va-stat-value">@(_stats?.TodayReceived ?? 0)<small>@L["home.stats.suffix.persons"]</small></span>
+                    <span class="va-stat-label">@L["home.stats.today"]</span>
+                </div>
+                <div class="va-stat">
+                    <span class="va-stat-value">@(_stats?.CurrentOnSite ?? 0)<small>@L["home.stats.suffix.persons"]</small></span>
+                    <span class="va-stat-label">@L["home.stats.onsite"]</span>
+                </div>
+                <div class="va-stat">
+                    <span class="va-stat-value">@(_stats?.AverageSeconds ?? 30)<small>@L["home.stats.suffix.seconds"]</small></span>
+                    <span class="va-stat-label">@L["home.stats.avg"]</span>
+                </div>
+                <div class="va-stat">
+                    <span class="va-stat-value">@(_stats?.WeeklyReceived ?? 0)<small>@L["home.stats.suffix.persons"]</small></span>
+                    <span class="va-stat-label">@L["home.stats.weekly"]</span>
+                </div>
+            </div>
+
+            @if (_loadingStats)
+            {
+                <div class="va-hero-loading">⏳ @L["scan.recognizing"]</div>
+            }
+        </div>
+    </div>
+
+    <div class="va-action-grid">
+        <button type="button" class="va-action va-action-primary" @onclick="StartRegister">
+            <span class="va-action-icon"><Icon Type="user-add" Theme="@IconThemeType.Outline" /></span>
+            <span class="va-action-arrow"><Icon Type="arrow-right" Theme="@IconThemeType.Outline" /></span>
+            <span class="va-action-title">@L["home.action.register"]</span>
+            <span class="va-action-desc">@L["home.action.register.hint"]</span>
+        </button>
+        <button type="button" class="va-action va-action-success" @onclick="@(() => Nav.NavigateTo("checkout"))">
+            <span class="va-action-icon"><Icon Type="logout" Theme="@IconThemeType.Outline" /></span>
+            <span class="va-action-arrow"><Icon Type="arrow-right" Theme="@IconThemeType.Outline" /></span>
+            <span class="va-action-title">@L["home.action.checkout"]</span>
+            <span class="va-action-desc">@L["home.action.checkout.hint"]</span>
+        </button>
+        <button type="button" class="va-action va-action-ghost" @onclick="@(() => Nav.NavigateTo("my-visits"))">
+            <span class="va-action-icon"><Icon Type="history" Theme="@IconThemeType.Outline" /></span>
+            <span class="va-action-arrow"><Icon Type="arrow-right" Theme="@IconThemeType.Outline" /></span>
+            <span class="va-action-title">@L["home.action.history"]</span>
+            <span class="va-action-desc">@L["home.action.history.hint"]</span>
+        </button>
+    </div>
+
+    <div class="va-tips" role="note">
+        <span class="va-tips-icon"><Icon Type="exclamation-circle" Theme="@IconThemeType.Fill" /></span>
+        <div>
+            <strong>@L["home.tip.title"]</strong>
+            <p>@L["home.tip.desc"]</p>
+        </div>
+    </div>
+</section>
+
+@code {
+    private VisitorStats? _stats;
+    private bool _loadingStats;
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        L.OnLanguageChanged += OnLangChanged;
+        await LoadStatsAsync();
+        // 每 30 秒自动刷新一次首页统计，模拟 Kiosk 看板
+        _refreshTimer = new System.Threading.Timer(async _ => await LoadStatsAsync(), null, 30_000, 30_000);
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        _loadingStats = true;
+        await InvokeAsync(StateHasChanged);
+        var result = await Api.GetStatsAsync();
+        if (result.IsSuccess && result.Data is not null)
+        {
+            _stats = result.Data;
+        }
+        _loadingStats = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void StartRegister()
+    {
+        State.ResetAll();
+        Nav.NavigateTo("consent");
+    }
+
+    private void OnLangChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+        L.OnLanguageChanged -= OnLangChanged;
+    }
+}

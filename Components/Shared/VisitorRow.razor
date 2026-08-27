@@ -1,0 +1,56 @@
+@if (Visitor is not null)
+{
+    <div class="va-visitor-row">
+        <div class="va-vr-left">
+            <div class="va-vr-avatar">@Initial(Visitor.Name)</div>
+            <div>
+                <div class="va-vr-name">
+                    @Visitor.Name
+                    @if (Visitor.Companions > 0)
+                    {
+                        <span class="va-badge va-badge-info">同行 @Visitor.Companions 人</span>
+                    }
+                    <span class="@Visitor.Status.ToBadgeClass()">@Visitor.Status.ToDisplay()</span>
+                </div>
+                <div class="va-vr-meta">📞 @Visitor.Phone
+                    @if (!string.IsNullOrWhiteSpace(Visitor.Company))
+                    {
+                        <span> · 🏢 @Visitor.Company</span>
+                    }
+                </div>
+                <div class="va-vr-meta">
+                    访 <strong>@Visitor.HostName</strong>
+                    @if (!string.IsNullOrWhiteSpace(Visitor.HostDepartment))
+                    {
+                        <span>（@Visitor.HostDepartment）</span>
+                    }
+                    · @Visitor.Purpose
+                </div>
+                <div class="va-vr-meta">
+                    编号 <strong class="va-code-inline">@Visitor.VisitCode</strong>
+                    · @Visitor.CheckInTime.ToString("MM-dd HH:mm") 入场
+                    · 已停留 @Visitor.DurationDisplay
+                </div>
+            </div>
+        </div>
+        <div class="va-vr-right">
+            @if (Visitor.Status == VisitStatus.CheckedIn && OnCheckOut.HasDelegate)
+            {
+                <button class="va-btn va-btn-primary" @onclick="@(() => OnCheckOut.InvokeAsync(Visitor))">
+                    签退
+                </button>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Visitor? Visitor { get; set; }
+    [Parameter] public EventCallback<Visitor> OnCheckOut { get; set; }
+
+    private static string Initial(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "·";
+        return name.Trim()[0].ToString();
+    }
+}

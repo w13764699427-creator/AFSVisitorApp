@@ -1,0 +1,146 @@
+@implements IAsyncDisposable
+
+<div class="va-camera-preview-container">
+    @if (_state == CameraState.Error)
+    {
+        <div class="va-camera-error">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <p>@_errorMessage</p>
+            <button type="button" class="va-btn va-btn-secondary" @onclick="RetryAsync">@L["btn.retry"]</button>
+        </div>
+    }
+    else
+    {
+        @* video 元素始终在 DOM 中（仅在 Active 时可见），确保 JS 能通过 id 找到它 *@
+        <div class="va-camera-frame">
+            @if (_state == CameraState.Initializing)
+            {
+                <div class="va-camera-initializing">
+                    <div class="va-spinner"></div>
+                    <span>@L["camera.initializing"]</span>
+                </div>
+            }
+            <video id="@_videoId"
+                   class="va-camera-feed"
+                   style="display: @(_state == CameraState.Active ? "block" : "none")"
+                   autoplay
+                   playsinline
+                   muted></video>
+            @if (_state == CameraState.Active)
+            {
+                <div class="va-camera-overlay">
+                    <svg class="va-camera-guide" viewBox="0 0 400 500">
+                        <circle cx="200" cy="250" r="120" stroke="#10b981" stroke-width="3" fill="none" stroke-dasharray="10 5" />
+                        <text x="200" y="400" text-anchor="middle" fill="#10b981" font-size="16">@L["face.tip"]</text>
+                    </svg>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private LocalizationService L { get; set; } = default!;
+
+    private enum CameraState { Initializing, Active, Error }
+    private CameraState _state = CameraState.Initializing;
+    private string? _errorMessage;
+    private readonly string _videoId = $"vacam-{Guid.NewGuid():N}";
+
+    /// <summary>摄像头是否已激活。</summary>
+    public bool IsActive => _state == CameraState.Active;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await StartCameraAsync();
+        }
+    }
+
+    /// <summary>启动摄像头（公开方法，供父组件手动重试）。</summary>
+    public async Task StartCameraAsync()
+    {
+        try
+        {
+            _state = CameraState.Initializing;
+            _errorMessage = null;
+            StateHasChanged();
+
+            // 检查浏览器是否支持摄像头
+            var supported = await JS.InvokeAsync<bool>("VisitorApp.Camera.isSupported");
+            if (!supported)
+            {
+                _errorMessage = L["camera.not_supported"];
+                _state = CameraState.Error;
+                return;
+            }
+
+            // 启动摄像头（video 元素始终在 DOM 中，JS 可直接定位）
+            var optionsJson = "{\"facingMode\":\"user\",\"width\":640,\"height\":480}";
+            await JS.InvokeVoidAsync("VisitorApp.Camera.start", _videoId, optionsJson);
+
+            _state = CameraState.Active;
+        }
+        catch (JSException ex)
+        {
+            _errorMessage = ex.Message;
+            _state = CameraState.Error;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"摄像头启动失败: {ex.Message}";
+            _state = CameraState.Error;
+        }
+        finally
+        {
+            // 关键：状态改变后必须通知 Blazor 重新渲染
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>从当前视频帧捕获一张照片，返回 base64 data URL（JPEG）。</summary>
+    public async Task<string?> CaptureFrameAsync()
+    {
+        if (_state != CameraState.Active)
+            return null;
+
+        try
+        {
+            var dataUrl = await JS.InvokeAsync<string>("VisitorApp.Camera.captureFrame", _videoId, 0.92);
+            return string.IsNullOrEmpty(dataUrl) ? null : dataUrl;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[CameraPreview] CaptureFrame error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>停止摄像头流。</summary>
+    public async Task StopCameraAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("VisitorApp.Camera.stop");
+        }
+        catch { /* 忽略组件已销毁时的 JS 调用异常 */ }
+        _state = CameraState.Initializing;
+    }
+
+    private async Task RetryAsync()
+    {
+        await StartCameraAsync();
+        StateHasChanged();
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        await StopCameraAsync();
+    }
+}

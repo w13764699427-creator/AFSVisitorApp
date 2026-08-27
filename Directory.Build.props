@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    本文件由本机环境修复脚本生成，用于解决 XA5300（找不到 Android SDK 目录）。
+    作用域仅限 VisitorApp 项目；其它解决方案不受影响。
+    如需在另一台机器使用不同路径，请同名覆盖即可。
+  -->
+  <PropertyGroup>
+    <AndroidSdkDirectory Condition=" '$(AndroidSdkDirectory)' == '' ">D:\Android\android-sdk</AndroidSdkDirectory>
+    <JavaSdkDirectory Condition=" '$(JavaSdkDirectory)' == '' ">D:\Android\openjdk\jdk-17.0.8.101-hotspot</JavaSdkDirectory>
+  </PropertyGroup>
+</Project>
