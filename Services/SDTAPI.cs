@@ -64,14 +64,47 @@ namespace VisitorApp.Platforms.Windows
         [DllImport("WltRS.dll")]
         public static extern int GetBmp(string file_name, int intf);
 
-        [DllImport("IDCard_Unpack.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("IDCUnpack.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern int unpack(byte[] src, byte[] dst, int bmpSave);
 
+        static IDReader()
+        {
+            // 读卡器 SDK 库放在应用目录或 Resources\Libs 下，显式指定查找路径避免加载失败。
+            NativeLibrary.SetDllImportResolver(typeof(IDReader).Assembly, (name, assembly, searchPath) =>
+            {
+                if (!name.StartsWith("sdtapi", StringComparison.OrdinalIgnoreCase)
+                    && !name.StartsWith("IDCUnpack", StringComparison.OrdinalIgnoreCase)
+                    && !name.StartsWith("WltRS", StringComparison.OrdinalIgnoreCase))
+                {
+                    return IntPtr.Zero;
+                }
+                var candidates = new[]
+                {
+                    Path.Combine(AppContext.BaseDirectory, name),
+                    Path.Combine(AppContext.BaseDirectory, "Resources", "Libs", name),
+                };
+                foreach (var candidate in candidates)
+                {
+                    if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out var handle))
+                        return handle;
+                }
+                return IntPtr.Zero;
+            });
+        }
+
         private static int isOpen = 1;               //自动开关串口 
+        /// <summary>最近一次读卡失败的原因（供上层展示具体错误），成功时为 null。</summary>
+        public static string? LastError { get; private set; }
+
+        /// <summary>最近一次读卡的过程诊断（各阶段返回值），用于排查证件照解码等问题。</summary>
+        public static string Diagnostics { get; private set; } = string.Empty;
+
         public static ReadCompletedEventArgs ReadIDCard()
         {
             try
             {
+                LastError = null;
+                Diagnostics = string.Empty;
                 bool isUsbPort = false;
                 int portNo = 0;
                 int ret = 0;
@@ -111,6 +144,7 @@ namespace VisitorApp.Platforms.Windows
                 }
                 if (portNo != 144)
                 {
+                    LastError = "未检测到读卡器设备：请检查 USB 连接与 SDT 驱动";
                     return null;
                 }
 
@@ -124,6 +158,7 @@ namespace VisitorApp.Platforms.Windows
                     {
                         ret = SDT_ClosePort(portID);
 
+                        LastError = $"找卡失败(返回值 {ret})：请将身份证放置在读卡器感应区";
                         return null;
                     }
                 }
@@ -137,6 +172,7 @@ namespace VisitorApp.Platforms.Windows
                     {
                         ret = SDT_ClosePort(portID);
 
+                        LastError = $"选卡失败(返回值 {ret})：请重新放置身份证";
                         return null;
                     }
                 }
@@ -156,10 +192,12 @@ namespace VisitorApp.Platforms.Windows
                 byte[] phData = new byte[puiPHMsgLen];
                 Marshal.Copy(hPHMsg, phData, 0, puiPHMsgLen);
                 Marshal.FreeHGlobal(hPHMsg);
+                Diagnostics += $"ReadBaseMsg ret={ret}, chLen={puiCHMsgLen}, phLen={puiPHMsgLen}; ";
 
                 if (ret != 144)
                 {
                     ret = SDT_ClosePort(portID);
+                    LastError = $"读卡失败(返回值 {ret})：请重新放置身份证";
                     return null;
                 }
 
@@ -191,7 +229,25 @@ namespace VisitorApp.Platforms.Windows
                 }
 
                 byte[] output = new byte[102 * 126 * 3];
-                ret = unpack(phData, output, 0);
+                // IDCUnpack.dll 按 "当前目录\idc_x64.lic" 查找授权文件（字符串分析已验证），
+                // 授权文件与 DLL 同在 Resources\Libs：调用前临时切换工作目录，失败时兜底回应用根目录。
+                var originalCwd = Environment.CurrentDirectory;
+                try
+                {
+                    var libsDir = Path.Combine(AppContext.BaseDirectory, "Resources", "Libs");
+                    if (Directory.Exists(libsDir)) Environment.CurrentDirectory = libsDir;
+                    ret = unpack(phData, output, 0);
+                    if (ret != 1)
+                    {
+                        Environment.CurrentDirectory = AppContext.BaseDirectory;
+                        ret = unpack(phData, output, 0);
+                    }
+                }
+                finally
+                {
+                    Environment.CurrentDirectory = originalCwd;
+                }
+                Diagnostics += $"unpack ret={ret}; ";
                 if (ret == 1)
                 {
                     // 垂直翻转 RGB 像素数据（102宽 × 126高）
@@ -207,22 +263,51 @@ namespace VisitorApp.Platforms.Windows
                         }
                     }
 
-                    using (var bitmap = new SKBitmap(102, 126, SKColorType.Rgb888x, SKAlphaType.Opaque))
+                    // unpack 输出为 RGB 顺序（旧项目 Color.FromArgb(r,g,b) 用法已验证），
+                    // 逐像素写入 SKBitmap（Bgra8888 内存布局）。
+                    using (var bitmap = new SKBitmap(102, 126, SKColorType.Bgra8888, SKAlphaType.Opaque))
                     {
-                        IntPtr ptr = bitmap.GetPixels();
-                        Marshal.Copy(output, 0, ptr, output.Length);
-                        using (var image = SKImage.FromBitmap(bitmap))
-                        using (var data = image.Encode(SKEncodedImageFormat.Jpeg, 90))
+                        var px = bitmap.GetPixels();
+                        if (px != IntPtr.Zero)
                         {
-                            cardInfo.PhotoData = data.ToArray();
+                            for (int i = 0, o = 0; i < 102 * 126; i++, o += 4)
+                            {
+                                Marshal.WriteByte(px, o, output[i * 3 + 2]);       // B
+                                Marshal.WriteByte(px, o + 1, output[i * 3 + 1]);   // G
+                                Marshal.WriteByte(px, o + 2, output[i * 3]);       // R
+                                Marshal.WriteByte(px, o + 3, 255);                 // A
+                            }
+                            using (var image = SKImage.FromBitmap(bitmap))
+                            using (var data = image?.Encode(SKEncodedImageFormat.Jpeg, 90))
+                            {
+                                if (data is not null) cardInfo.PhotoData = data.ToArray();
+                            }
                         }
                     }
+                    Diagnostics += $"PhotoData={(cardInfo.PhotoData is null ? "编码失败" : cardInfo.PhotoData.Length + "字节")}; ";
                 }             
+                else
+                {
+                    Diagnostics += "证件照解码失败; ";
+                }
                 return cardInfo;
+            }
+            catch (DllNotFoundException)
+            {
+                // 缺少 sdtapi.dll / WltRS.dll / IDCard_Unpack.dll 等 SDK 库：向上抛出，由服务层给出明确提示。
+                LastError = "读卡器 SDK 库缺失";
+                throw;
+            }
+            catch (BadImageFormatException)
+            {
+                // DLL 位宽与进程不符（如 32 位 dll 加载到 64 位进程）。
+                LastError = "读卡器 SDK 库位宽不匹配（需要 64 位版本）";
+                throw;
             }
             catch (Exception ex)
             {
                 //ConstDefine.Logger.Error(ex);
+                LastError = $"读卡异常：{ex.Message}";
                 return null;
             }
         }

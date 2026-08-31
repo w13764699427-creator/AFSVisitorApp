@@ -73,6 +73,32 @@
         <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
         <PackageReference Include="SkiaSharp" Version="3.119.4" />
+        <PackageReference Include="SqlSugarCore" Version="5.1.4.217" />
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    </ItemGroup>
+
+    <!-- 人脸比对（SCRFD 检测 + ArcFace 识别）仅 Windows 平台：ONNX Runtime(OpenVINO GPU) + OpenCvSharp -->
+    <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+        <PackageReference Include="Intel.ML.OnnxRuntime.OpenVino" Version="1.24.1" />
+        <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
+        <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
+    </ItemGroup>
+
+    <!-- 人脸模型：不打包进应用，仅复制到输出目录供运行时加载（检测+识别两个模型约 183MB；
+         1k3d68.onnx 为 Demo 中的姿态估计模型，其结果未被比对流程使用，故不加载不复制） -->
+    <ItemGroup>
+        <None Include="Resources\Models\det_10g.onnx" Condition="Exists('Resources\Models\det_10g.onnx')" CopyToOutputDirectory="PreserveNewest" />
+        <None Include="Resources\Models\w600k_r50.onnx" Condition="Exists('Resources\Models\w600k_r50.onnx')" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <!-- 身份证读卡器 SDK（64 位）：sdtapi.dll / IDCUnpack.dll 及授权文件，来自 GoodOne AFS。
+         IDCUnpack.dll 按"当前目录\idc_x64.lic"查授权，授权文件同时复制到输出根目录兜底。 -->
+    <ItemGroup>
+        <None Include="Resources\Libs\sdtapi.dll" Condition="Exists('Resources\Libs\sdtapi.dll')" CopyToOutputDirectory="PreserveNewest" />
+        <None Include="Resources\Libs\IDCUnpack.dll" Condition="Exists('Resources\Libs\IDCUnpack.dll')" CopyToOutputDirectory="PreserveNewest" />
+        <None Include="Resources\Libs\*.lic" CopyToOutputDirectory="PreserveNewest" />
+        <None Include="Resources\Libs\idc_x64.lic" Link="idc_x64.lic" CopyToOutputDirectory="PreserveNewest" />
+        <None Include="Resources\Libs\id_card.lic" Link="id_card.lic" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

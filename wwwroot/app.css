@@ -1561,6 +1561,16 @@ h1, h2, h3, h4 {
     color: #fff;
 }
 
+.va-face-compare {
+    margin-top: .75rem;
+    text-align: center;
+}
+
+.va-face-compare .va-badge {
+    font-size: .95rem;
+    padding: .45rem .9rem;
+}
+
 /* ===== Pass extras (success page) ===== */
 .va-pass-face {
     width: 110px;

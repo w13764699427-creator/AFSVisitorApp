@@ -27,10 +27,11 @@ public static class MauiProgram
         // 业务状态
         builder.Services.AddScoped<VisitorFormState>();
 
-        // 设备能力 —— 摄像头 / 身份证读卡器 / OCR
+        // 设备能力 —— 摄像头 / 身份证读卡器 / OCR / 人脸比对
         builder.Services.AddSingleton<ICameraService, CameraService>();
         builder.Services.AddSingleton<IIdCardRecognitionService, MockIdCardRecognitionService>();
         builder.Services.AddSingleton<IIdCardReaderService, IdCardReaderService>();
+        builder.Services.AddSingleton<IFaceCompareService, FaceCompareService>();
 
         // 仿真后端：统计 / 员工目录 / 提交回执 / 审批查询
         builder.Services.AddSingleton<IMockApiService, MockApiService>();

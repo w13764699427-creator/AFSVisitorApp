@@ -7,6 +7,7 @@
 @inject VisitorRegistrationService RegService
 @inject LocalizationService L
 @inject IIdCardReaderService IdCardReader
+@inject IFaceCompareService FaceComparer
 @implements IDisposable
 
 <PageTitle>智能访客自助登记 · @CurrentStepTitle()</PageTitle>
@@ -320,6 +321,30 @@
                             </div>
                         }
                     </div>
+                    @if (_comparingFace || _faceCompareResult is not null)
+                    {
+                        <div class="va-face-compare">
+                            @if (_comparingFace)
+                            {
+                                <span class="va-badge va-badge-info">⏳ 正在与证件照比对…</span>
+                            }
+                            else if (_faceCompareResult!.Success)
+                            {
+                                <span class="va-badge @(_faceCompareResult.Similarity >= SimilarityThreshold ? "va-badge-success" : "va-badge-warning")">
+                                    人脸比对相似度：@_faceCompareResult.Similarity.ToString("P1")
+                                    @(_faceCompareResult.Similarity >= SimilarityThreshold ? "（比对通过）" : "（相似度偏低）")
+                                    @if (!string.IsNullOrEmpty(FaceComparer.ExecutionProvider))
+                                    {
+                                        <text> · @FaceComparer.ExecutionProvider</text>
+                                    }
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="va-badge va-badge-muted">@_faceCompareResult.Message</span>
+                            }
+                        </div>
+                    }
                     <div class="va-scan-actions">
                         @if (string.IsNullOrEmpty(State.Current.FacePhoto))
                         {
@@ -361,7 +386,9 @@
 
                 @if (_step < 5)
                 {
-                    <button type="button" class="va-btn va-btn-primary va-btn-lg" @onclick="Next">@L["btn.next"]</button>
+                    <button type="button" class="va-btn va-btn-primary va-btn-lg" @onclick="NextAsync" disabled="@(_step == 2 && _comparingFace)">
+                        @L["btn.next"]
+                    </button>
                 }
                 else
                 {
@@ -434,6 +461,14 @@
     private bool _capturingFace;
     private bool _cameraActive;
     private CameraPreview? _cameraPreview;
+    private bool _comparingFace;
+    private FaceCompareResult? _faceCompareResult;
+
+    /// <summary>
+    /// 人脸比对相似度阈值（ArcFace 余弦）：可在「系统设置 → 人脸比对」中调整（百分比），
+    /// 默认 30%。实测同人 1.0、异性别不同人 ~0.10，低于阈值拦截并要求重拍。
+    /// </summary>
+    private float SimilarityThreshold { get; set; } = AppSettingsStore.DefaultThresholdPercent / 100f;
     private bool _searchingHost;
     private List<StaffInfo> _employeeHits = new();
     private CancellationTokenSource? _hostSearchCts;
@@ -449,6 +484,8 @@
     {
         if (!State.Current.ConsentAccepted) Nav.NavigateTo("consent");
         L.OnLanguageChanged += OnLang;
+        // 每次进入登记流程都重新读取系统设置中的比对阈值，保证设置页修改后立即生效。
+        SimilarityThreshold = AppSettingsStore.LoadThresholdPercent() / 100f;
         _ = LoadOptionsAsync();
     }
 
@@ -511,6 +548,8 @@
             _cardResult = result;
             ApplyCardToForm(result);
             if (_toast is not null) await _toast.ShowAsync("读卡成功", "success", 2000);
+            // 若已拍过现场照，读卡后立即补做一次人脸比对
+            if (!string.IsNullOrEmpty(State.Current.FacePhoto)) _ = CompareWithIdCardAsync();
         }
         catch (Exception ex)
         {
@@ -537,6 +576,7 @@
     {
         _cameraActive = true;
         State.Current.FacePhoto = string.Empty;
+        _faceCompareResult = null;   // 重新拍摄时清空上次比对结果，避免旧结果误导门禁判断。
         StateHasChanged();
     }
 
@@ -559,10 +599,45 @@
             State.Current.FacePhoto = dataUrl;
             await StopCameraAsync();
             if (_toast is not null) await _toast.ShowAsync(L["face.captured"], "success", 2000);
+            // 拍照完成后自动与身份证证件照比对（未读卡时自动跳过）
+            _ = CompareWithIdCardAsync();
         }
         catch (Exception ex)
         { if (_toast is not null) await _toast.ShowAsync(ex.Message, "error", 3500); }
         finally { _capturingFace = false; StateHasChanged(); }
+    }
+
+    /// <summary>将现场照与身份证证件照做人脸比对（仅 Windows 平台），结果以徽章 + Toast 提示。</summary>
+    private async Task CompareWithIdCardAsync()
+    {
+        if (!FaceComparer.IsSupported) return;
+        if (string.IsNullOrEmpty(State.Current.FacePhoto) || string.IsNullOrEmpty(State.Current.IdCardPhoto))
+        {
+            _faceCompareResult = null;
+            return;
+        }
+
+        _comparingFace = true;
+        StateHasChanged();
+        try
+        {
+            var result = await FaceComparer.CompareAsync(State.Current.FacePhoto, State.Current.IdCardPhoto);
+            _faceCompareResult = result;
+            if (_toast is not null)
+            {
+                if (!result.Success)
+                    await _toast.ShowAsync($"人脸比对未完成：{result.Message}", "error", 3000);
+                else if (result.Similarity >= SimilarityThreshold)
+                    await _toast.ShowAsync($"人脸比对通过，相似度 {result.Similarity:P1}", "success", 2600);
+                else
+                    await _toast.ShowAsync($"人脸相似度偏低（{result.Similarity:P1}），请确认是否为本人", "error", 3500);
+            }
+        }
+        finally
+        {
+            _comparingFace = false;
+            StateHasChanged();
+        }
     }
 
     /// <summary>输入即搜（150ms 防抖）：按姓名 / 手机号模糊匹配，百度式联想下拉。</summary>
@@ -691,18 +766,65 @@
         State.Current.Companions = State.Current.CompanionList.Count;
     }
 
-    private void Next()
+    private async Task NextAsync()
     {
-        // 第 2 步为拍照：必须完成拍摄才能继续。
-        if (_step == 2 && string.IsNullOrEmpty(State.Current.FacePhoto))
+        // 第 2 步为拍照：必须完成拍摄，且与身份证证件照比对通过才能继续。
+        if (_step == 2)
         {
-            _toast?.ShowAsync("请先拍摄现场人脸照片", "error");
-            return;
+            if (!await EnsureFaceComparePassedAsync()) return;
         }
         if (_step >= 3 && _step <= 5 && !ValidateCurrentStep()) return;
         _step = Math.Min(5, _step + 1);
         // 进入"来访信息"步时若选项仍为空（首次加载时接口未就绪），填写时重试一次。
         if (_step == 5) _ = LoadOptionsAsync(force: true);
+    }
+
+    /// <summary>
+    /// 人脸比对门禁：已拍照 + 已读卡的前提下，未比对则现场补比对，
+    /// 比对失败或相似度低于阈值时拦截并提示重拍。平台不支持比对时直接放行。
+    /// </summary>
+    private async Task<bool> EnsureFaceComparePassedAsync()
+    {
+        if (string.IsNullOrEmpty(State.Current.FacePhoto))
+        {
+            if (_toast is not null) await _toast.ShowAsync("请先拍摄现场人脸照片", "error");
+            return false;
+        }
+        if (!FaceComparer.IsSupported) return true;   // 非 Windows 平台不支持本地比对，不阻断流程。
+        if (string.IsNullOrEmpty(State.Current.IdCardPhoto))
+        {
+            // 区分"未读卡"与"已读卡但未取到证件照"，避免误导用户重复刷卡。
+            var msg = _cardResult is not null
+                ? "已读到身份证，但未能获取证件照片，请返回上一步重新读卡"
+                : "请先刷身份证，以便与证件照进行人脸比对";
+            if (_toast is not null) await _toast.ShowAsync(msg, "error", 3500);
+            return false;
+        }
+
+        // 尚未比对（或之前被跳过）：点"下一步"时现场补做一次并等待结果。
+        if (_faceCompareResult is null && !_comparingFace)
+        {
+            await CompareWithIdCardAsync();
+        }
+        if (_comparingFace)
+        {
+            if (_toast is not null) await _toast.ShowAsync("人脸比对进行中，请稍候", "success", 1500);
+            return false;
+        }
+
+        var result = _faceCompareResult;
+        if (result is null || !result.Success)
+        {
+            if (_toast is not null) await _toast.ShowAsync($"人脸比对未完成：{result?.Message ?? "请重试"}", "error", 3000);
+            return false;
+        }
+        if (result.Similarity < SimilarityThreshold)
+        {
+            if (_toast is not null)
+                await _toast.ShowAsync($"人脸比对未通过（相似度 {result.Similarity:P1}），请重新拍摄", "error", 3500);
+            return false;
+        }
+        return true;
     }
 
     private bool ValidateCurrentStep()

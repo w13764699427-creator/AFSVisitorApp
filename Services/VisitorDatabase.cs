@@ -1,57 +1,45 @@
-using SQLite;
+using SqlSugar;
 using VisitorApp.Models;
 
 namespace VisitorApp.Services;
 
 /// <summary>
-/// 本地 SQLite 持久化：负责保存访客登记记录，便于"签退 / 我的来访"页面查询。
+/// 本地 SQLite 持久化（SqlSugar 驱动）：负责保存访客登记记录，便于"签退 / 我的来访"页面查询。
+/// 使用 SqlSugarScope —— 官方推荐的单例 / 多线程场景客户端，内部保证连接与线程安全。
 /// </summary>
 public class VisitorDatabase
 {
-    /// <summary>sqlite_master 查询映射行。</summary>
-    private sealed class IndexInfoRow
-    {
-        public string name { get; set; } = string.Empty;
-    }
-
     private readonly SemaphoreSlim _initLock = new(1, 1);
-    private SQLiteAsyncConnection _database;
+    private SqlSugarScope? _db;
 
-    private async Task<SQLiteAsyncConnection> GetDatabaseAsync()
+    private async Task<SqlSugarScope> GetDbAsync()
     {
-        if (_database is not null)
-            return _database;
+        if (_db is not null)
+            return _db;
 
         await _initLock.WaitAsync();
         try
         {
-            if (_database is not null)
-                return _database;
+            if (_db is not null)
+                return _db;
+
+            // MAUI（尤其 Android / iOS）需要显式初始化 SQLitePCLRaw 原生库
+            SQLitePCL.Batteries_V2.Init();
 
             var dbPath = Path.Combine(FileSystem.AppDataDirectory, "visitor-app.db3");
 
-            var connection = new SQLiteAsyncConnection(dbPath,
-                SQLiteOpenFlags.ReadWrite |
-                SQLiteOpenFlags.Create |
-                SQLiteOpenFlags.SharedCache);
-
-            await connection.CreateTableAsync<Visitor>();
-
-            // 兼容旧库：手机号曾被建成 UNIQUE 索引，导致同一访客再次登记时插入失败；
-            // 先清掉含 Phone 的旧索引，再重建为普通索引（同一手机号允许多次来访）。
-            var phoneIndexes = await connection.QueryAsync<IndexInfoRow>(
-                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='Visitors' " +
-                "AND sql LIKE '%Phone%' AND name NOT LIKE 'sqlite_%'");
-            foreach (var idx in phoneIndexes)
+            var db = new SqlSugarScope(new ConnectionConfig
             {
-                await connection.ExecuteAsync($"DROP INDEX \"{idx.name}\"");
-            }
+                DbType = DbType.Sqlite,
+                ConnectionString = $"DataSource={dbPath}",
+                IsAutoCloseConnection = true,
+            });
 
-            await connection.CreateIndexAsync<Visitor>(v => v.Phone, unique: false);
-            await connection.CreateIndexAsync<Visitor>(v => v.Name);
+            // CodeFirst：不存在则建表，已存在则按实体特性增量维护结构与索引
+            db.CodeFirst.InitTables<Visitor>();
 
-            _database = connection;
-            return _database;
+            _db = db;
+            return _db;
         }
         finally
         {
@@ -61,36 +49,36 @@ public class VisitorDatabase
 
     public async Task<int> SaveAsync(Visitor visitor)
     {
-        var database = await GetDatabaseAsync();
+        var db = await GetDbAsync();
         if (visitor.Id == 0)
         {
-            return await database.InsertAsync(visitor);
+            return await db.Insertable(visitor).ExecuteCommandAsync();
         }
-        return await database.UpdateAsync(visitor);
+        return await db.Updateable(visitor).ExecuteCommandAsync();
     }
 
     public async Task<Visitor?> GetAsync(int id)
     {
-        var database = await GetDatabaseAsync();
-        return await database.FindAsync<Visitor>(id);
+        var db = await GetDbAsync();
+        return await db.Queryable<Visitor>().InSingleAsync(id);
     }
 
     public async Task<Visitor?> GetByCodeAsync(string code)
     {
-        var database = await GetDatabaseAsync();
+        var db = await GetDbAsync();
         if (string.IsNullOrWhiteSpace(code)) return null;
         var trimmed = code.Trim();
-        return await database.Table<Visitor>()
+        return await db.Queryable<Visitor>()
             .Where(v => v.VisitCode == trimmed)
-            .FirstOrDefaultAsync();
+            .FirstAsync();
     }
 
     public async Task<List<Visitor>> GetActiveByPhoneAsync(string phone)
     {
-        var database = await GetDatabaseAsync();
+        var db = await GetDbAsync();
         if (string.IsNullOrWhiteSpace(phone)) return new List<Visitor>();
         var trimmed = phone.Trim();
-        return await database.Table<Visitor>()
+        return await db.Queryable<Visitor>()
             .Where(v => v.Phone == trimmed && v.Status == VisitStatus.CheckedIn)
             .OrderByDescending(v => v.CheckInTime)
             .ToListAsync();
@@ -98,23 +86,23 @@ public class VisitorDatabase
 
     public async Task<List<Visitor>> GetRecentAsync(int max = 30)
     {
-        var database = await GetDatabaseAsync();
-        var list = await database.Table<Visitor>()
+        var db = await GetDbAsync();
+        return await db.Queryable<Visitor>()
             .OrderByDescending(v => v.CheckInTime)
+            .Take(max)
             .ToListAsync();
-        return list.Take(max).ToList();
     }
 
     public async Task<int> CheckOutAsync(int id)
     {
-        var database = await GetDatabaseAsync();
-        var visitor = await database.FindAsync<Visitor>(id);
+        var db = await GetDbAsync();
+        var visitor = await db.Queryable<Visitor>().InSingleAsync(id);
         if (visitor is null || visitor.Status != VisitStatus.CheckedIn)
         {
             return 0;
         }
         visitor.CheckOutTime = DateTime.Now;
         visitor.Status = VisitStatus.CheckedOut;
-        return await database.UpdateAsync(visitor);
+        return await db.Updateable(visitor).ExecuteCommandAsync();
     }
 }

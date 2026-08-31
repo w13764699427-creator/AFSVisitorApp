@@ -488,3 +488,7 @@ Properties/launchSettings.json
 msbuild.binlog
 DeviceTests/
 artifacts/
+
+# 部署大文件：人脸模型（约 318MB，随发布包单独分发）与发布输出目录，不入仓库（GitHub 单文件上限 100MB）
+Resources/Models/*.onnx
+publish/
