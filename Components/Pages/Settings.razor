@@ -207,7 +207,12 @@ else
             ConfirmIcon.Warning);
         if (result != ConfirmResult.OK) return;
 
+#if WINDOWS
         AppExitHelper.Exit();
+#else
+        // 非 Windows 目标（Android 等）：Platforms\Windows 目录不参与编译，无退出助手，提示即可。
+        await ShowToast("当前平台不支持一键退出，请直接关闭应用", "error");
+#endif
     }
 
     private bool TryValidate(out string normalizedBaseUrl, out string? error)
