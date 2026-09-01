@@ -344,6 +344,12 @@
                                 <span class="va-badge va-badge-muted">@_faceCompareResult.Message</span>
                             }
                         </div>
+                        @if (FaceComparer is FaceCompareService { FallbackNote: not null } fcsFallback)
+                        {
+                            <div class="va-face-compare">
+                                <span class="va-hint">⚠ @fcsFallback.FallbackNote</span>
+                            </div>
+                        }
                     }
                     <div class="va-scan-actions">
                         @if (string.IsNullOrEmpty(State.Current.FacePhoto))

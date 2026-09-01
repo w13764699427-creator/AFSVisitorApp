@@ -49,6 +49,11 @@
         <PlatformTarget>x64</PlatformTarget>
     </PropertyGroup>
 
+    <!-- 待整理的外部代码片段：不参与编译（Razor SDK 默认包含 **/*.cs） -->
+    <ItemGroup>
+        <Compile Remove="_pending_import\**" />
+    </ItemGroup>
+
     <ItemGroup>
         <!-- App Icon -->
         <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
@@ -67,6 +72,20 @@
         <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
     </ItemGroup>
 
+    <!-- 独立的 WinForms 人脸比对测试程序（FaceCompareTest），不参与主项目编译 -->
+    <ItemGroup>
+        <Compile Remove="FaceCompareTest\**" />
+        <None Remove="FaceCompareTest\**" />
+        <EmbeddedResource Remove="FaceCompareTest\**" />
+        <Content Remove="FaceCompareTest\**" />
+    </ItemGroup>
+
+    <!-- 新模型用法的参考示例文件（依赖示例工程接口，仅作阅读参考，不参与编译） -->
+    <ItemGroup>
+        <Compile Remove="Models\WinOnnxFramework.cs" />
+        <Compile Remove="Models\WinOpenVINOFramework.cs" />
+    </ItemGroup>
+
     <ItemGroup>
         <PackageReference Include="AntDesign" Version="1.6.1" />
         <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
@@ -77,18 +96,18 @@
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     </ItemGroup>
 
-    <!-- 人脸比对（SCRFD 检测 + ArcFace 识别）仅 Windows 平台：ONNX Runtime(OpenVINO GPU) + OpenCvSharp -->
+    <!-- 人脸比对（OpenVINO：detect 检测 + extract 识别 + quality 姿态）仅 Windows 平台：
+         JYPPX.OpenVINO.CSharp.API（C# 封装）+ OpenVINO.runtime.win（运行时，自动复制原生库）+ OpenCvSharp -->
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
-        <PackageReference Include="Intel.ML.OnnxRuntime.OpenVino" Version="1.24.1" />
+        <PackageReference Include="JYPPX.OpenVINO.CSharp.API" Version="3.3.1" />
+        <PackageReference Include="OpenVINO.runtime.win" Version="2026.3.0" />
         <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
         <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
     </ItemGroup>
 
-    <!-- 人脸模型：不打包进应用，仅复制到输出目录供运行时加载（检测+识别两个模型约 183MB；
-         1k3d68.onnx 为 Demo 中的姿态估计模型，其结果未被比对流程使用，故不加载不复制） -->
+    <!-- 人脸模型（OpenVINO IR 格式，共约 68MB）：复制到输出目录供运行时加载 -->
     <ItemGroup>
-        <None Include="Resources\Models\det_10g.onnx" Condition="Exists('Resources\Models\det_10g.onnx')" CopyToOutputDirectory="PreserveNewest" />
-        <None Include="Resources\Models\w600k_r50.onnx" Condition="Exists('Resources\Models\w600k_r50.onnx')" CopyToOutputDirectory="PreserveNewest" />
+        <None Include="Resources\ModelsOpenVino\*.*" Condition="Exists('Resources\ModelsOpenVino')" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <!-- 身份证读卡器 SDK（64 位）：sdtapi.dll / IDCUnpack.dll 及授权文件，来自 GoodOne AFS。

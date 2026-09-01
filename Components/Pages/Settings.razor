@@ -4,6 +4,7 @@
 @inject NavigationManager Nav
 @inject KernelApiOptions Options
 @inject KernelApiSettingsStore Store
+@inject IConfirmService ConfirmService
 
 <PageTitle>系统设置 · 访客自助</PageTitle>
 
@@ -105,6 +106,15 @@ else
                 <input class="va-input" type="number" min="0" max="100" @bind="_thresholdPercent" />
                 <span class="va-hint">取值 0~100。建议 25~40：过低会放过非本人，过高可能误拦证件照年代久远的本人。默认 30。</span>
             </div>
+            <div class="va-field">
+                <label>推理设备</label>
+                <select class="va-input" @bind="_faceDevice">
+                    <option value="CPU">CPU（稳定，默认）</option>
+                    <option value="GPU">GPU（不可用时自动回退 CPU）</option>
+                    <option value="AUTO">AUTO（GPU 优先，自动分配设备）</option>
+                </select>
+                <span class="va-hint">GPU / AUTO 需要显卡被 OpenVINO 驱动支持（较老的核显多不支持）；回退时比对结果中会附回退说明。保存后下次比对生效。</span>
+            </div>
         </div>
     </div>
 
@@ -113,14 +123,7 @@ else
         <p class="va-muted">关闭本应用并清理所有相关进程（含 WebView2 渲染进程），退出后需在系统层面重新启动。</p>
         <div class="va-form-actions" style="justify-content:flex-start;">
             <button class="va-btn va-btn-lg" style="background:#dc2626; color:#fff; border-color:#dc2626;" @onclick="ExitApp">
-                @if (_confirmExit)
-                {
-                    <span>⚠ 确认退出程序？再点一次</span>
-                }
-                else
-                {
-                    <span>⏻ 退出程序</span>
-                }
+                <span>⏻ 退出程序</span>
             </button>
         </div>
     </div>
@@ -145,14 +148,12 @@ else
     private int _timeout;
     private bool _shift;
     private int _thresholdPercent = AppSettingsStore.DefaultThresholdPercent;
+    private string _faceDevice = FaceInferenceDeviceStore.Default;
 
     private bool _testing;
     private string? _testResult;
     private bool _testOk;
     private Toast? _toast;
-
-    private bool _confirmExit;
-    private CancellationTokenSource? _exitConfirmCts;
 
     private string TestBoxStyle =>
         $"margin-top:1.2rem; padding:.85rem 1rem; border-radius:10px; font-size:.95rem; line-height:1.5; " +
@@ -170,6 +171,7 @@ else
         _timeout = Options.TimeoutSeconds;
         _shift = Options.ShiftToBeijingTimeOnWrite;
         _thresholdPercent = AppSettingsStore.LoadThresholdPercent();
+        _faceDevice = FaceInferenceDeviceStore.Load();
     }
 
     /// <summary>回车提交密码。</summary>
@@ -194,23 +196,17 @@ else
 
     private void BackHome() => Nav.NavigateTo("");
 
-    /// <summary>退出程序：两次点击确认，清理全部相关进程后终止。</summary>
-    private void ExitApp()
+    /// <summary>退出程序：弹窗确认后，清理全部相关进程并彻底退出。</summary>
+    private async Task ExitApp()
     {
-        if (!_confirmExit)
-        {
-            _confirmExit = true;
-            _exitConfirmCts?.Cancel();
-            _exitConfirmCts = new CancellationTokenSource();
-            var token = _exitConfirmCts.Token;
-            // 4 秒内未二次点击则取消确认状态，避免误触退出。
-            _ = Task.Delay(4000, token).ContinueWith(t =>
-            {
-                if (t.IsCanceled) return;
-                _ = InvokeAsync(() => { _confirmExit = false; StateHasChanged(); });
-            }, token);
-            return;
-        }
+        // 注意 IConfirmService.Show 参数顺序：内容在前、标题在后。
+        var result = await ConfirmService.Show(
+            "将关闭本应用及所有相关进程（含 WebView2 渲染进程），退出后需重新启动。",
+            "确认退出程序？",
+            ConfirmButtons.OKCancel,
+            ConfirmIcon.Warning);
+        if (result != ConfirmResult.OK) return;
+
         AppExitHelper.Exit();
     }
 
@@ -266,6 +262,7 @@ else
 
         Store.Save(Options);
         AppSettingsStore.SaveThresholdPercent(_thresholdPercent);
+        FaceInferenceDeviceStore.Save(_faceDevice);
         _baseUrl = baseUrl; // 回填规范化后的地址
 
         await ShowToast("配置已保存，立即生效", "success");
@@ -320,6 +317,7 @@ else
         _timeout = d.TimeoutSeconds;
         _shift = d.ShiftToBeijingTimeOnWrite;
         _thresholdPercent = AppSettingsStore.DefaultThresholdPercent;
+        _faceDevice = FaceInferenceDeviceStore.Default;
         _testResult = null;
     }
 

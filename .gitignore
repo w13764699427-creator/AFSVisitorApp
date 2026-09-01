@@ -492,3 +492,9 @@ artifacts/
 # 部署大文件：人脸模型（约 318MB，随发布包单独分发）与发布输出目录，不入仓库（GitHub 单文件上限 100MB）
 Resources/Models/*.onnx
 publish/
+
+# FaceCompareTest 测试程序的模型副本（与 Resources/ModelsOpenVino 重复）
+FaceCompareTest/models/
+
+# 待整理的外部代码片段（不参与编译）
+_pending_import/
