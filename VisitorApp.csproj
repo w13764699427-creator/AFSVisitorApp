@@ -1,9 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
 
     <PropertyGroup>
-        <!-- Windows 默认目标：同时编译 Android + Windows；macOS 上额外编 Android / iOS / Mac Catalyst。 -->
-        <TargetFrameworks>net10.0-android;net10.0-windows10.0.19041.0</TargetFrameworks>
-        <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-android;net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
+        <!-- 目标框架：仅 Windows（自助机交付平台）。
+             不再包含 net10.0-android：SDK 10.0.400 所需的 Microsoft.NETCore.App.Runtime.Mono.win-x64 10.0.11
+             尚未发布到 NuGet，导致任何带 RuntimeIdentifier 的构建（含 VS F5）还原失败。
+             如需恢复 Android：把下行改回 net10.0-android;net10.0-windows10.0.19041.0 并确保 Mono 运行时包可用。 -->
+        <TargetFrameworks>net10.0-windows10.0.19041.0</TargetFrameworks>
+        <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-windows10.0.19041.0</TargetFrameworks>
 
         <!-- Note for MacCatalyst:
             The default runtime is maccatalyst-x64, except in Release config, in which case the default is maccatalyst-x64;maccatalyst-arm64.

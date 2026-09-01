@@ -22,7 +22,6 @@ for ($i = 1; $i -le 4; $i++) {
         -r win-x64 `
         --self-contained true `
         -p:PublishReadyToRun=false `
-        "-p:TargetFrameworks=net10.0-windows10.0.19041.0" `
         -o publish\win-x64-sc
     if ($LASTEXITCODE -eq 0) { break }
     Write-Host "Attempt $i failed, retry in 3s..." -ForegroundColor Yellow
