@@ -1,6 +1,5 @@
 @page "/checkout"
 @using VisitorApp.Services.Kernel
-@inject VisitorDatabase Db
 @inject VisitorRegistrationService RegService
 @inject NavigationManager Nav
 
@@ -9,12 +8,12 @@
 <section class="va-step-page">
     <div class="va-card va-search-card">
         <h2>离场签退</h2>
-        <p class="va-muted">请输入登记时使用的手机号，或访客编号。</p>
+        <p class="va-muted">请输入登记时使用的手机号，或登记单号。</p>
 
         <div class="va-search-row">
             <input class="va-input va-input-lg va-grow" @bind="_keyword"
                    @bind:event="oninput" @onkeydown="OnKey"
-                   placeholder="手机号 / V0603xxxx" autofocus />
+                   placeholder="手机号 / 登记单号" autofocus />
             <button class="va-btn va-btn-primary va-btn-lg" @onclick="SearchAsync" disabled="@_loading">
                 @if (_loading) { <span>查询中…</span> } else { <span>🔍 查询</span> }
             </button>
@@ -25,7 +24,7 @@
             <div class="va-empty">
                 <span class="va-empty-icon">∅</span>
                 <h3>未找到匹配的在场记录</h3>
-                <p>请确认手机号 / 编号是否正确，或前往前台协助处理。</p>
+                <p>请确认手机号 / 登记单号是否正确，或前往前台协助处理。</p>
             </div>
         }
         else if (_byCode is not null)
@@ -66,7 +65,7 @@
         var key = _keyword?.Trim() ?? string.Empty;
         if (string.IsNullOrEmpty(key))
         {
-            await (_toast?.ShowAsync("请输入手机号或访客编号", "error") ?? Task.CompletedTask);
+            await (_toast?.ShowAsync("请输入手机号或登记单号", "error") ?? Task.CompletedTask);
             return;
         }
 
@@ -77,20 +76,33 @@
 
         try
         {
-            // 优先按访客编号匹配
-            if (key.StartsWith("V", StringComparison.OrdinalIgnoreCase))
+            // 纯数字按登记单号（后端 SheetID）精确查询
+            if (long.TryParse(key, out var sheetId))
             {
-                _byCode = await Db.GetByCodeAsync(key);
-                if (_byCode is not null && _byCode.Status != VisitStatus.CheckedIn)
+                var sheet = await RegService.GetSheetAsync(sheetId);
+                if (sheet is not null && sheet.State == 4)
                 {
-                    await (_toast?.ShowAsync($"该编号已于 {_byCode.CheckOutTime:HH:mm} 签退", "error") ?? Task.CompletedTask);
-                    _byCode = null;
+                    _byCode = VisitorRegistrationService.ToVisitor(sheet);
+                }
+                else if (sheet is not null)
+                {
+                    await (_toast?.ShowAsync($"登记单 {sheetId} 已于 {sheet.CheckOutTime:HH:mm} 签退", "error") ?? Task.CompletedTask);
                 }
             }
             else
             {
-                _list = await Db.GetActiveByPhoneAsync(key);
+                // 手机号：查今天起 30 天内的在场单，主访客或随行人员手机号匹配均可
+                var sheets = await RegService.GetOnSiteSheetsAsync(30);
+                _list = sheets
+                    .Where(s => s.VisitorMobile == key
+                                || (s.Visitors?.Any(v => v.Mobile == key) ?? false))
+                    .Select(VisitorRegistrationService.ToVisitor)
+                    .ToList();
             }
+        }
+        catch (Exception ex)
+        {
+            await (_toast?.ShowAsync($"查询失败：{ex.Message}", "error") ?? Task.CompletedTask);
         }
         finally
         {
@@ -101,23 +113,34 @@
 
     private async Task CheckOutAsync(Visitor v)
     {
-        // 先调用后端签退（VisitorCheckOut）；后端不可用时不阻断本地签退。
-        if (v.SheetId > 0)
+        if (v.SheetId <= 0)
         {
-            try { await RegService.CheckOutAsync(v.SheetId); }
-            catch { /* 离线降级：仅更新本地 */ }
+            await (_toast?.ShowAsync("缺少登记单号，无法签退，请联系前台", "error") ?? Task.CompletedTask);
+            return;
         }
 
-        var rows = await Db.CheckOutAsync(v.Id);
-        if (rows > 0)
+        _loading = true;
+        try
         {
-            await (_toast?.ShowAsync($"{v.Name}，再见！已成功签退") ?? Task.CompletedTask);
-            await Task.Delay(800);
-            Nav.NavigateTo("");
+            var reply = await RegService.CheckOutAsync(v.SheetId);
+            if (reply.IsSuccess)
+            {
+                await (_toast?.ShowAsync($"{v.Name}，再见！已成功签退") ?? Task.CompletedTask);
+                await Task.Delay(800);
+                Nav.NavigateTo("");
+            }
+            else
+            {
+                await (_toast?.ShowAsync($"签退失败：{reply.msg ?? "请重试"}", "error") ?? Task.CompletedTask);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            await (_toast?.ShowAsync("签退失败，请联系前台", "error") ?? Task.CompletedTask);
+            await (_toast?.ShowAsync($"签退失败：{ex.Message}", "error") ?? Task.CompletedTask);
+        }
+        finally
+        {
+            _loading = false;
         }
     }
 }

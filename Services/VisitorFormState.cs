@@ -26,8 +26,9 @@ public class VisitorFormState
 
     public static string GenerateVisitCode()
     {
-        // 6 位访客流水号：日期前缀 + 随机数字，便于前台口播 / 手填。
-        var rand = Random.Shared.Next(1000, 9999);
+        // 6 位随机流水号：日期前缀 + 随机数字（约 90 万种组合），便于前台口播 / 手填；
+        // 撞码防护由 VisitorDatabase.GenerateUniqueVisitCodeAsync 查库重试兜底。
+        var rand = Random.Shared.Next(100000, 999999);
         var datePart = DateTime.Now.ToString("MMdd");
         return $"V{datePart}{rand}";
     }

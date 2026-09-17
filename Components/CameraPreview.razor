@@ -47,6 +47,9 @@
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private LocalizationService L { get; set; } = default!;
 
+    /// <summary>摄像头成功激活后的回调，供父组件启动自动抓拍等后续动作。</summary>
+    [Parameter] public EventCallback OnCameraActivated { get; set; }
+
     private enum CameraState { Initializing, Active, Error }
     private CameraState _state = CameraState.Initializing;
     private string? _errorMessage;
@@ -86,6 +89,13 @@
             await JS.InvokeVoidAsync("VisitorApp.Camera.start", _videoId, optionsJson);
 
             _state = CameraState.Active;
+            StateHasChanged();
+
+            // 通知父组件摄像头已就绪（如启动自动抓拍比对）
+            if (OnCameraActivated.HasDelegate)
+            {
+                await OnCameraActivated.InvokeAsync();
+            }
         }
         catch (JSException ex)
         {

@@ -44,13 +44,14 @@ public class KernelVisitorRegistrationApi : IVisitorRegistrationApi
     public async Task<WebResultInfo<string>> CreateAppointmentAsync(VisitorRegistrationSheetInfo info, CancellationToken ct = default)
     {
         // 预约提交不做时区平移；先看原始响应再决定解析形状。
+        // 实测响应：{"code":0,"data":9,"msg":null,"result":0}（data 即新单号）。
         var str = await _api.HttpPostAsync("/KernelService/Staff/iVisitorAppointment", info, ct).ConfigureAwait(false);
-        System.Diagnostics.Debug.WriteLine($"[Kernel] iVisitorAppointment 原始响应: {str}");
+        System.Diagnostics.Debug.WriteLine($"[Kernel] iVisitorAppointment 原始响应: {MaskPii(str)}");
         return ParseAppointmentReply(str);
     }
 
     /// <summary>
-    /// 按响应实际内容解析提交结果：WebResultInfo 包装 / Reply 风格包装 / 裸登记单号；
+    /// 按响应实际内容解析提交结果：WebResultInfo 包装（data=单号）/ Reply 风格包装 / 裸登记单号；
     /// 无法识别时把原文片段带在 msg 里，便于现场诊断。
     /// </summary>
     private static WebResultInfo<string> ParseAppointmentReply(string? str)
@@ -130,13 +131,26 @@ public class KernelVisitorRegistrationApi : IVisitorRegistrationApi
         };
     }
 
-    private static JsonElement FindProperty(JsonElement root, string name)
+    public async Task<List<VisitorRegistrationSheetInfo>> QuerySheetsAsync(string userToken, int state, DateTime startDate, DateTime endDate, CancellationToken ct = default)
     {
-        foreach (var p in root.EnumerateObject())
+        // 复刻服务端 WCF 契约：/KernelService/VisitorRegistrationSheet/QueryVisitorRegistrationSheet。
+        // DateTime 查询参数用 ISO 8601（已实测：/Date(毫秒)/ 格式服务端报 500"该字符串未被识别为有效的 DateTime"）。
+        var url = "/KernelService/VisitorRegistrationSheet/QueryVisitorRegistrationSheet" +
+                  $"?UserToken={Esc(userToken)}&State={state}" +
+                  $"&StartDate={Esc(startDate.ToString("yyyy-MM-ddTHH:mm:ss"))}" +
+                  $"&EndDate={Esc(endDate.ToString("yyyy-MM-ddTHH:mm:ss"))}";
+        var str = await _api.HttpGetAsync(url, ct).ConfigureAwait(false);
+        System.Diagnostics.Debug.WriteLine($"[Kernel] QueryVisitorRegistrationSheet(State={state}) 原始响应: {(str?.Length > 300 ? str[..300] + "…" : str)}");
+
+        // 兼容三种返回：WebResultInfo 包装、裸 JSON 数组、WCF 默认 XML（ArrayOfXxx）。
+        var wrapped = TryDeserialize<WebResultInfo<List<VisitorRegistrationSheetInfo>>>(str);
+        var list = wrapped?.data ?? ParseList<VisitorRegistrationSheetInfo>(str) ?? new List<VisitorRegistrationSheetInfo>();
+
+        foreach (var s in list)
         {
-            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value;
+            NormalizeDateTimeToLocal(s);
         }
-        return default;
+        return list;
     }
 
     public Task<StaffInfo?> GetStaffByIdCardAsync(string userToken, string idCard, CancellationToken ct = default)
@@ -179,7 +193,7 @@ public class KernelVisitorRegistrationApi : IVisitorRegistrationApi
         var url = $"/KernelService/VisitorRegistrationSheet/VisitorCheckOut?UserToken={Esc(userToken)}";
         var payload = _options.ShiftToBeijingTimeOnWrite ? ShiftSheetToBeijing(info) : info;
         var str = await _api.HttpPostAsync(url, payload, ct).ConfigureAwait(false);
-        System.Diagnostics.Debug.WriteLine($"[Kernel] VisitorCheckOut 原始响应: {str}");
+        System.Diagnostics.Debug.WriteLine($"[Kernel] VisitorCheckOut 原始响应: {MaskPii(str)}");
         return ParseReply(str, info.SheetID, "签退无响应");
     }
 
@@ -198,7 +212,19 @@ public class KernelVisitorRegistrationApi : IVisitorRegistrationApi
                 if (names.Contains("code") || names.Contains("result") || names.Contains("sheetid") || names.Contains("msg"))
                 {
                     var reply = JsonSerializer.Deserialize<Reply>(str, ApiHelper.Json);
-                    if (reply is not null) return reply;
+                    if (reply is not null)
+                    {
+                        // 签到回执实测形如 {"NewID":"8","Result":0}：单号在 NewID 字段，映射到 SheetID。
+                        if (reply.SheetID <= 0)
+                        {
+                            var newId = FindProperty(root, "NewID");
+                            if (newId.ValueKind == JsonValueKind.String && long.TryParse(newId.GetString(), out var parsedId))
+                                reply.SheetID = parsedId;
+                            else if (newId.ValueKind == JsonValueKind.Number)
+                                reply.SheetID = newId.GetInt64();
+                        }
+                        return reply;
+                    }
                 }
                 // 空对象 {} 之类：按成功处理。
                 return Reply.Ok(fallbackSheetId);
@@ -209,9 +235,11 @@ public class KernelVisitorRegistrationApi : IVisitorRegistrationApi
 
             if (root.ValueKind == JsonValueKind.String)
             {
+                // 纯数字字符串：按成功单号处理；其余文本（如"Token失效"等服务端错误提示）按失败带回原文，
+                // 不能再一律包装成成功，否则"未真正入场却显示签到成功"。
                 var s = root.GetString() ?? string.Empty;
                 if (long.TryParse(s, out var id) && id > 0) return Reply.Ok(id);
-                return Reply.Ok(fallbackSheetId, string.IsNullOrEmpty(s) ? "ok" : s);
+                return Reply.Fail(-1, string.IsNullOrWhiteSpace(s) ? noResponseMsg : s);
             }
         }
         catch (JsonException)
@@ -285,7 +313,26 @@ public class KernelVisitorRegistrationApi : IVisitorRegistrationApi
 
     private static string Esc(string? s) => Uri.EscapeDataString(s ?? string.Empty);
 
-    private static T? TryDeserialize<T>(string json)
+    /// <summary>调试日志脱敏：掩去长数字串（身份证 / 手机号）与 base64 大块（人脸照片），并截断长度。</summary>
+    private static string MaskPii(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+        var masked = Regex.Replace(s, @"\d{11,}", "***");
+        masked = Regex.Replace(masked, @"[A-Za-z0-9+/=]{200,}", "…");
+        return masked.Length > 300 ? masked[..300] + "…" : masked;
+    }
+
+    /// <summary>大小写不敏感地查找 JSON 属性，未找到返回 default(JsonElement)。</summary>
+    private static JsonElement FindProperty(JsonElement root, string name)
+    {
+        foreach (var p in root.EnumerateObject())
+        {
+            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value;
+        }
+        return default;
+    }
+
+    private static T? TryDeserialize<T>(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return default;
         try { return JsonSerializer.Deserialize<T>(json, ApiHelper.Json); }
@@ -385,16 +432,18 @@ public class KernelVisitorRegistrationApi : IVisitorRegistrationApi
         return clone;
     }
 
-    /// <summary>读取后把所有 DateTime 字段从 UTC/服务端时区转为本地时区（复刻 Operation.NormalDateTime）。</summary>
+    /// <summary>读取后把所有 DateTime 字段从 UTC/服务端时区转为本地时区（复刻 Operation.NormalDateTime）。
+    /// 已标记 Kind=Local 的值（WCF 日期转换器解析时已转好）直接跳过，避免二次平移。</summary>
     private static void NormalizeDateTimeToLocal(object? obj)
     {
         if (obj is null) return;
-        foreach (var p in obj.GetType().GetProperties())
+        foreach (var p in DateTimePropsOf(obj.GetType()))
         {
             if (p.PropertyType == typeof(DateTime) && p.CanRead && p.CanWrite)
             {
                 var d = (DateTime)p.GetValue(obj)!;
-                p.SetValue(obj, d.ToLocalTime());
+                if (d != default && d.Kind != DateTimeKind.Local)
+                    p.SetValue(obj, d.ToLocalTime());
             }
             else if (p.PropertyType == typeof(List<VisitorInfo>) && p.GetValue(obj) is List<VisitorInfo> vs)
             {
@@ -402,6 +451,14 @@ public class KernelVisitorRegistrationApi : IVisitorRegistrationApi
             }
         }
     }
+
+    /// <summary>DateTime 相关属性的反射缓存：列表查询时避免每条记录重复 GetProperties()。</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo[]> _propCache = new();
+
+    private static System.Reflection.PropertyInfo[] DateTimePropsOf(Type type)
+        => _propCache.GetOrAdd(type, static t => t.GetProperties()
+            .Where(p => p.PropertyType == typeof(DateTime) || p.PropertyType == typeof(List<VisitorInfo>))
+            .ToArray());
 
     // ---- StaffSearch 查询 DTO（私有，仅供真实后端组装查询体）----
     private enum MatchType { ISNULL, Equal, Contains, GreaterThan, LessThan }

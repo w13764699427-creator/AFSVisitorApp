@@ -47,7 +47,8 @@ public class ApiHelper
         var payload = body is null ? "{}" : JsonSerializer.Serialize(body, body.GetType(), Json);
         var full = BuildUrl(url);
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-        using var resp = await _http.PostAsync(full, content, ct).ConfigureAwait(false);
+        using var cts = CreateTimeoutCts(ct);
+        using var resp = await _http.PostAsync(full, content, cts.Token).ConfigureAwait(false);
         Log(full, resp);
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
@@ -57,10 +58,23 @@ public class ApiHelper
     public async Task<string> HttpGetAsync(string url, CancellationToken ct = default)
     {
         var full = BuildUrl(url);
-        using var resp = await _http.GetAsync(full, ct).ConfigureAwait(false);
+        using var cts = CreateTimeoutCts(ct);
+        using var resp = await _http.GetAsync(full, cts.Token).ConfigureAwait(false);
         Log(full, resp);
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 按当前配置的 TimeoutSeconds 生成每请求超时源（设置页修改后即时生效，不依赖启动时固化的 HttpClient.Timeout），
+    /// 并与调用方取消令牌联动。
+    /// </summary>
+    private CancellationTokenSource CreateTimeoutCts(CancellationToken ct)
+    {
+        var seconds = _options.TimeoutSeconds > 0 ? _options.TimeoutSeconds : 20;
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(seconds));
+        return cts;
     }
 
     /// <summary>把请求地址与状态码打到调试输出，便于定位 404 到底出在哪个接口路径。</summary>
@@ -102,9 +116,10 @@ public class ApiHelper
         {
             return JsonSerializer.Deserialize<T>(json, Json);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            // 后端个别异常分支可能直接返回纯文本，吞掉解析异常交由上层按 null 处理。
+            // 后端个别异常分支可能直接返回纯文本：保留"按 null 处理"的旧行为，但留下诊断日志，不再完全静默。
+            System.Diagnostics.Debug.WriteLine($"[Kernel] 响应反序列化为 {typeof(T).Name} 失败: {ex.Message}");
             return default;
         }
     }
@@ -148,14 +163,22 @@ public sealed class WcfDateTimeConverter : JsonConverter<DateTime>
                 var s = reader.GetString()!;
                 var m = Pattern.Match(s);
                 if (m.Success)
-                    return DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(m.Groups[1].Value)).LocalDateTime;
+                    return SpecifyLocal(DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(m.Groups[1].Value)).LocalDateTime);
                 return DateTime.TryParse(s, out var d) ? d : default;
             case JsonTokenType.Number:
-                return DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64()).LocalDateTime;
+                return SpecifyLocal(DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64()).LocalDateTime);
             default:
                 return default;
         }
     }
+
+    /// <summary>
+    /// DateTimeOffset.LocalDateTime 返回的 DateTime 其 Kind 为 Unspecified；
+    /// 若不显式标记为 Local，下游 NormalDateTime 的 ToLocalTime() 会把它再当 UTC 平移一次，
+    /// 造成非 UTC 时区设备上时间双重偏移。这里只改 Kind、不动数值。
+    /// </summary>
+    private static DateTime SpecifyLocal(DateTime d)
+        => d.Kind == DateTimeKind.Local ? d : DateTime.SpecifyKind(d, DateTimeKind.Local);
 }
 
 /// <summary>可空 DateTime 版的 WCF 日期转换器。</summary>

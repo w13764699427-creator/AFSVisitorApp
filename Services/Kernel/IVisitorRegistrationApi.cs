@@ -12,8 +12,18 @@ public interface IVisitorRegistrationApi
     /// <summary>登录换取会话（UserToken）。对应 /KernelService/Login。</summary>
     Task<UserData2?> LoginAsync(string username, string password, CancellationToken ct = default);
 
-    /// <summary>提交访客预约 / 登记单。对应 /KernelService/Staff/iVisitorAppointment（原 UpVisitor）。</summary>
+    /// <summary>
+    /// 提交访客预约 / 登记单。对应 /KernelService/Staff/iVisitorAppointment（原 UpVisitor）。
+    /// 实测必须先经本接口建单（预约时间 / 申请人只有它会落库）：直接 VisitorCheckIn 建的单缺这些字段，
+    /// 且会被服务端立即自动签退（State 直接到 5）。
+    /// </summary>
     Task<WebResultInfo<string>> CreateAppointmentAsync(VisitorRegistrationSheetInfo info, CancellationToken ct = default);
+
+    /// <summary>
+    /// 按状态 + 时间段查询登记单列表。对应
+    /// /KernelService/VisitorRegistrationSheet/QueryVisitorRegistrationSheet。
+    /// </summary>
+    Task<List<VisitorRegistrationSheetInfo>> QuerySheetsAsync(string userToken, int state, DateTime startDate, DateTime endDate, CancellationToken ct = default);
 
     /// <summary>按身份证号查人员档案。对应 /KernelService/Staff/GetStaffByIDCard。</summary>
     Task<StaffInfo?> GetStaffByIdCardAsync(string userToken, string idCard, CancellationToken ct = default);

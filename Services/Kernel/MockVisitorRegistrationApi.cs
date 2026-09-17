@@ -85,6 +85,20 @@ public class MockVisitorRegistrationApi : IVisitorRegistrationApi
         return new WebResultInfo<string> { code = 0, result = 0, msg = "ok", data = sheetId.ToString() };
     }
 
+    public async Task<List<VisitorRegistrationSheetInfo>> QuerySheetsAsync(string userToken, int state, DateTime startDate, DateTime endDate, CancellationToken ct = default)
+    {
+        await Task.Delay(_rand.Next(80, 240), ct);
+        return _sheets.Values
+            .Where(s => state < 0 || s.State == state)
+            .Where(s =>
+            {
+                var t = s.CheckInTime == default ? s.ApplyDate : s.CheckInTime;
+                return t >= startDate && t <= endDate;
+            })
+            .OrderByDescending(s => s.CheckInTime)
+            .ToList();
+    }
+
     public async Task<StaffInfo?> GetStaffByIdCardAsync(string userToken, string idCard, CancellationToken ct = default)
     {
         await Task.Delay(_rand.Next(60, 160), ct);
@@ -122,7 +136,8 @@ public class MockVisitorRegistrationApi : IVisitorRegistrationApi
 
         var sheet = info.SheetID > 0 && _sheets.TryGetValue(info.SheetID, out var s) ? s : info;
         sheet.SheetID = info.SheetID > 0 ? info.SheetID : Interlocked.Increment(ref _seq);
-        sheet.State = 0;
+        // 与真实后端对齐：State=4 表示"在场"（签退页按 4 检索、ToVisitor 按 4 判在场）。
+        sheet.State = 4;
         sheet.CheckInTime = DateTime.Now;
         if (sheet.Visitors is { Count: > 0 })
         {
@@ -142,7 +157,8 @@ public class MockVisitorRegistrationApi : IVisitorRegistrationApi
         {
             return Reply.Fail(404, "未找到对应登记单");
         }
-        sheet.State = 1;
+        // 与真实后端对齐：State=5 表示"已签退"（ToVisitor 将非 4 状态视为已离场）。
+        sheet.State = 5;
         sheet.CheckOutTime = DateTime.Now;
         if (sheet.Visitors is { Count: > 0 })
         {

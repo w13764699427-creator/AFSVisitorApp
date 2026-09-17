@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
     <PropertyGroup>
         <!-- 目标框架：仅 Windows（自助机交付平台）。
@@ -94,9 +94,12 @@
         <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
         <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+        <PackageReference Include="QRCoder" Version="1.8.0" />
         <PackageReference Include="SkiaSharp" Version="3.119.4" />
         <PackageReference Include="SqlSugarCore" Version="5.1.4.217" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+        <!-- Windows DPAPI：服务密码 / 身份证号 / 人脸照片落盘加密 -->
+        <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     </ItemGroup>
 
     <!-- 人脸比对（OpenVINO：detect 检测 + extract 识别 + quality 姿态）仅 Windows 平台：

@@ -119,6 +119,24 @@ else
     </div>
 
     <div class="va-card">
+        <h2>管理密码</h2>
+        <p class="va-muted">修改进入本设置页的管理密码。两次输入一致且至少 4 位；两项均留空提交可恢复出厂密码。</p>
+        <div class="va-form-grid">
+            <div class="va-field">
+                <label>新密码</label>
+                <input class="va-input" type="password" @bind="_newAdminPwd" placeholder="至少 4 位" />
+            </div>
+            <div class="va-field">
+                <label>确认新密码</label>
+                <input class="va-input" type="password" @bind="_newAdminPwd2" placeholder="再次输入新密码" />
+            </div>
+        </div>
+        <div class="va-form-actions" style="justify-content:flex-start;">
+            <button class="va-btn va-btn-ghost" @onclick="ChangeAdminPwdAsync">修改管理密码</button>
+        </div>
+    </div>
+
+    <div class="va-card">
         <h2>退出程序</h2>
         <p class="va-muted">关闭本应用并清理所有相关进程（含 WebView2 渲染进程），退出后需在系统层面重新启动。</p>
         <div class="va-form-actions" style="justify-content:flex-start;">
@@ -133,12 +151,12 @@ else
 <Toast @ref="_toast" />
 
 @code {
-    /// <summary>进入系统设置的管理密码。</summary>
-    private const string AdminPassword = "51028083";
-
     private bool _unlocked;
     private string _adminPwd = string.Empty;
     private bool _pwdError;
+
+    private string _newAdminPwd = string.Empty;
+    private string _newAdminPwd2 = string.Empty;
 
     private string _baseUrl = string.Empty;
     private string _account = string.Empty;
@@ -182,7 +200,8 @@ else
 
     private void Unlock()
     {
-        if (_adminPwd == AdminPassword)
+        // 出厂密码与现场修改过的密码统一走加盐哈希校验（AppSettingsStore），源码不再出现明文密码。
+        if (AppSettingsStore.VerifyAdminPassword(_adminPwd))
         {
             _unlocked = true;
             _pwdError = false;
@@ -195,6 +214,38 @@ else
     }
 
     private void BackHome() => Nav.NavigateTo("");
+
+    /// <summary>
+    /// 修改管理密码：两项留空 = 恢复出厂密码；否则要求两次一致且至少 4 位。
+    /// 修改成功后立即生效（下次解锁用新密码校验）。
+    /// </summary>
+    private async Task ChangeAdminPwdAsync()
+    {
+        var pwd = _newAdminPwd ?? string.Empty;
+        var pwd2 = _newAdminPwd2 ?? string.Empty;
+
+        if (pwd.Length == 0 && pwd2.Length == 0)
+        {
+            AppSettingsStore.ChangeAdminPassword(null);
+            await ShowToast("已恢复出厂管理密码", "success");
+        }
+        else if (pwd.Length < 4)
+        {
+            await ShowToast("新密码至少 4 位", "error");
+        }
+        else if (pwd != pwd2)
+        {
+            await ShowToast("两次输入的新密码不一致", "error");
+        }
+        else
+        {
+            AppSettingsStore.ChangeAdminPassword(pwd);
+            await ShowToast("管理密码已修改，下次进入设置时生效", "success");
+        }
+
+        _newAdminPwd = string.Empty;
+        _newAdminPwd2 = string.Empty;
+    }
 
     /// <summary>退出程序：弹窗确认后，清理全部相关进程并彻底退出。</summary>
     private async Task ExitApp()
@@ -259,7 +310,9 @@ else
 
         Options.BaseUrl = baseUrl;
         Options.ServiceAccount = _account?.Trim() ?? string.Empty;
-        Options.ServicePassword = _password ?? string.Empty;
+        // 密码留空 = 沿用当前已保存的密码（输入框不回显明文）。
+        if (!string.IsNullOrWhiteSpace(_password))
+            Options.ServicePassword = _password;
         Options.ClientId = _clientId?.Trim() ?? string.Empty;
         Options.KeepTimeSeconds = _keepTime;
         Options.TimeoutSeconds = _timeout;

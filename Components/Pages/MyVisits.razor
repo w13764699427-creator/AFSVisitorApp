@@ -1,23 +1,32 @@
 @page "/my-visits"
-@inject VisitorDatabase Db
+@using VisitorApp.Services.Kernel
+@inject VisitorRegistrationService RegService
 
 <PageTitle>我的来访 · 访客自助</PageTitle>
 
 <section class="va-step-page">
     <div class="va-card">
-        <h2>本机最近登记记录</h2>
-        <p class="va-muted">仅显示在<strong>本设备</strong>上完成的最近 30 条记录，按时间倒序。</p>
+        <h2>最近登记记录</h2>
+        <p class="va-muted">来自服务器的最近 30 条登记记录（全部状态），按签到时间倒序。</p>
 
         @if (_loading)
         {
             <div class="va-loading">加载中…</div>
+        }
+        else if (_error is not null)
+        {
+            <div class="va-empty">
+                <span class="va-empty-icon">⚠️</span>
+                <h3>查询失败</h3>
+                <p>@_error</p>
+            </div>
         }
         else if (_list.Count == 0)
         {
             <div class="va-empty">
                 <span class="va-empty-icon">📭</span>
                 <h3>暂无登记记录</h3>
-                <p>完成首次登记后，记录将会显示在这里。</p>
+                <p>服务器上暂无登记记录。</p>
                 <a class="va-btn va-btn-primary va-btn-lg" href="">立即去登记</a>
             </div>
         }
@@ -49,12 +58,19 @@
 @code {
     private List<Visitor> _list = new();
     private bool _loading = true;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            _list = await Db.GetRecentAsync(30);
+            // 从后端 QueryVisitorRegistrationSheet 查询：State=-1（全部状态），宽时间范围容忍服务器时钟偏差。
+            var sheets = await RegService.GetRecentSheetsAsync(days: 30, max: 30);
+            _list = sheets.Select(VisitorRegistrationService.ToVisitor).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = $"无法连接登记服务器：{ex.Message}";
         }
         finally
         {

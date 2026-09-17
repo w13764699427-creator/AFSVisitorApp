@@ -1,4 +1,4 @@
-﻿@page "/"
+@page "/"
 @inject NavigationManager Nav
 @inject VisitorFormState State
 @inject IMockApiService Api
@@ -74,26 +74,48 @@
     private VisitorStats? _stats;
     private bool _loadingStats;
     private System.Threading.Timer? _refreshTimer;
+    private bool _disposed;
 
     protected override async Task OnInitializedAsync()
     {
         L.OnLanguageChanged += OnLangChanged;
         await LoadStatsAsync();
         // 每 30 秒自动刷新一次首页统计，模拟 Kiosk 看板
-        _refreshTimer = new System.Threading.Timer(async _ => await LoadStatsAsync(), null, 30_000, 30_000);
+        _refreshTimer = new System.Threading.Timer(_ => _ = TimerTickAsync(), null, 30_000, 30_000);
+    }
+
+    /// <summary>
+    /// 定时器回调只做调度：回调是 async void 语义（Timer 不等待 Task），
+    /// 任何异常若逃逸到这里会直接击穿进程，因此 LoadStatsAsync 内部必须消化全部异常。
+    /// </summary>
+    private async Task TimerTickAsync()
+    {
+        try { await LoadStatsAsync(); }
+        catch { /* 刷新失败不影响首页展示 */ }
     }
 
     private async Task LoadStatsAsync()
     {
-        _loadingStats = true;
-        await InvokeAsync(StateHasChanged);
-        var result = await Api.GetStatsAsync();
-        if (result.IsSuccess && result.Data is not null)
+        if (_disposed) return;
+        try
         {
-            _stats = result.Data;
+            _loadingStats = true;
+            await InvokeAsync(StateHasChanged);
+            var result = await Api.GetStatsAsync();
+            if (result.IsSuccess && result.Data is not null)
+            {
+                _stats = result.Data;
+            }
         }
-        _loadingStats = false;
-        await InvokeAsync(StateHasChanged);
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Home] 统计加载失败：{ex.Message}");
+        }
+        finally
+        {
+            _loadingStats = false;
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
     }
 
     private void StartRegister()
@@ -106,6 +128,7 @@
 
     public void Dispose()
     {
+        _disposed = true;
         _refreshTimer?.Dispose();
         L.OnLanguageChanged -= OnLangChanged;
     }

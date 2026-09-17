@@ -34,13 +34,22 @@ public sealed class FaceCompareService : IFaceCompareService, IDisposable
                 var initError = EnsureEngine();
                 if (initError is not null) return FaceCompareResult.Fail(initError);
 
-                var engine = _engine!;
-                lock (engine)   // 引擎非线程安全：同一时刻只允许一次推理
+                // 引擎非线程安全且重建（EnsureEngine / Dispose）在 _initLock 内释放旧引擎：
+                // 推理必须与"释放/重建引擎"共用同一把锁，且引擎引用须在锁内读取，
+                // 否则设置页切换设备可在推理中释放引擎（use-after-dispose）。
+                lock (_initLock)
                 {
-                    var face1 = engine.Process(DecodeImage(imageDataUrl1), withQuality: false);
+                    var engine = _engine;
+                    if (engine is null) return FaceCompareResult.Fail("人脸引擎未初始化");
+
+                    using var img1 = DecodeImage(imageDataUrl1);
+                    if (img1 is null) return FaceCompareResult.Fail("照片 1 无法解码");
+                    var face1 = engine.Process(img1, withQuality: false);
                     if (face1 is null) return FaceCompareResult.Fail("照片 1 未检测到人脸");
 
-                    var face2 = engine.Process(DecodeImage(imageDataUrl2), withQuality: false);
+                    using var img2 = DecodeImage(imageDataUrl2);
+                    if (img2 is null) return FaceCompareResult.Fail("照片 2 无法解码");
+                    var face2 = engine.Process(img2, withQuality: false);
                     if (face2 is null) return FaceCompareResult.Fail("照片 2 未检测到人脸");
 
                     return FaceCompareResult.Ok(OpenVinoFaceEngine.Cosine(face1.Embedding, face2.Embedding));
@@ -53,7 +62,7 @@ public sealed class FaceCompareService : IFaceCompareService, IDisposable
         }
     }
 
-    /// <summary>懒加载引擎（首次比对时初始化）；设置页修改设备后通过 Reset 重建。</summary>
+    /// <summary>懒加载引擎（首次比对时初始化）；设置页修改推理设备后，下次比对检测到设备变化即自动重建。</summary>
     private string? EnsureEngine()
     {
         var configuredDevice = FaceInferenceDeviceStore.Load();
@@ -128,8 +137,12 @@ public sealed class FaceCompareService : IFaceCompareService, IDisposable
 
     public void Dispose()
     {
-        _engine?.Dispose();
-        _engine = null;
+        // 与推理共用 _initLock：确保没有比对正在进行时才释放引擎。
+        lock (_initLock)
+        {
+            _engine?.Dispose();
+            _engine = null;
+        }
     }
 }
 

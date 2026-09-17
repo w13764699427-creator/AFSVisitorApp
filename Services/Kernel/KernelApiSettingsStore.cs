@@ -23,7 +23,11 @@ public class KernelApiSettingsStore
     {
         options.BaseUrl = Preferences.Default.Get(KeyBaseUrl, options.BaseUrl);
         options.ServiceAccount = Preferences.Default.Get(KeyServiceAccount, options.ServiceAccount);
-        options.ServicePassword = Preferences.Default.Get(KeyServicePassword, options.ServicePassword);
+        // 服务密码以 DPAPI 密文存储；兼容读取历史明文（首次 Save 后即转密文）。
+        var savedPwd = Preferences.Default.Get(KeyServicePassword, string.Empty);
+        options.ServicePassword = savedPwd.Length == 0
+            ? options.ServicePassword
+            : PiiProtector.ReadFlexible(savedPwd, options.ServicePassword);
         options.ClientId = Preferences.Default.Get(KeyClientId, options.ClientId);
         options.KeepTimeSeconds = Preferences.Default.Get(KeyKeepTime, options.KeepTimeSeconds);
         options.TimeoutSeconds = Preferences.Default.Get(KeyTimeout, options.TimeoutSeconds);
@@ -35,7 +39,9 @@ public class KernelApiSettingsStore
     {
         Preferences.Default.Set(KeyBaseUrl, NormalizeBaseUrl(options.BaseUrl));
         Preferences.Default.Set(KeyServiceAccount, options.ServiceAccount ?? string.Empty);
-        Preferences.Default.Set(KeyServicePassword, options.ServicePassword ?? string.Empty);
+        // 密码 DPAPI 加密后落盘（加密不可用时退回明文，避免丢失配置）。
+        Preferences.Default.Set(KeyServicePassword,
+            PiiProtector.Protect(options.ServicePassword) ?? options.ServicePassword ?? string.Empty);
         Preferences.Default.Set(KeyClientId, options.ClientId ?? string.Empty);
         Preferences.Default.Set(KeyKeepTime, options.KeepTimeSeconds);
         Preferences.Default.Set(KeyTimeout, options.TimeoutSeconds);

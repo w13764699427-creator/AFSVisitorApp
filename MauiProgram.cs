@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using VisitorApp.Services;
 using VisitorApp.Services.Kernel;
 using VisitorApp.Services.Localization;
@@ -46,17 +46,16 @@ public static class MauiProgram
 
         // 供真实实现使用的 HttpClient（Mock 模式下创建但不会发起请求）。
         // Accept: application/json —— 后端为 WCF 风格，不带该头会默认回 XML。
+        // 超时不在此设置（启动即固化，设置页改了也不生效），由 ApiHelper 按每请求超时源控制；
+        // BaseAddress 亦不依赖（ApiHelper 按当前 BaseUrl 动态拼址，支持运行时切换服务器）。
         builder.Services.AddSingleton(_ => new HttpClient
         {
-            BaseAddress = new Uri(kernelOptions.BaseUrl),
-            Timeout = TimeSpan.FromSeconds(kernelOptions.TimeoutSeconds),
+            Timeout = Timeout.InfiniteTimeSpan,
             DefaultRequestHeaders = { Accept = { new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json") } },
         });
         builder.Services.AddSingleton<ApiHelper>();
 
-        // 默认走离线 Mock，保证无后端也能完整演示"预约→签到→查询→签退"。
-        // 接入真实后端：把下面这行替换为 KernelVisitorRegistrationApi 即可，UI 与门面无需改动。
-        //builder.Services.AddSingleton<IVisitorRegistrationApi, MockVisitorRegistrationApi>();
+        // 真实后端（/KernelService）实现；离线演示时换回 MockVisitorRegistrationApi 即可，UI 与门面无需改动。
         builder.Services.AddSingleton<IVisitorRegistrationApi, KernelVisitorRegistrationApi>();
 
         builder.Services.AddSingleton<VisitorRegistrationService>();

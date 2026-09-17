@@ -3,7 +3,6 @@
 @using VisitorApp.Services.Kernel
 @inject NavigationManager Nav
 @inject VisitorFormState State
-@inject VisitorDatabase Db
 @inject VisitorRegistrationService RegService
 @inject LocalizationService L
 @inject IIdCardReaderService IdCardReader
@@ -74,7 +73,7 @@
                                 <div><span>@L["scan.field.name"]</span><strong>@_cardResult.Name</strong></div>
                                 <div><span>@L["scan.field.gender"]</span><strong>@_cardResult.Gender</strong></div>
                                 <div><span>@L["scan.field.birthday"]</span><strong>@_cardResult.Birthday</strong></div>
-                                <div><span>@L["scan.field.idnumber"]</span><strong>@_cardResult.IdNumber</strong></div>
+                                <div><span>@L["scan.field.idnumber"]</span><strong>@MaskId(_cardResult.IdNumber)</strong></div>
                                 <div class="va-scan-grid-wide"><span>@L["scan.field.address"]</span><strong>@_cardResult.Address</strong></div>
                                 <div><span>@L["scan.field.authority"]</span><strong>@_cardResult.IssuingAuthority</strong></div>
                                 <div><span>@L["scan.field.validity"]</span><strong>@_cardResult.StartDate ~ @_cardResult.EndDate</strong></div>
@@ -193,7 +192,7 @@
                                                 @foreach (var emp in _employeeHits.Take(12))
                                                 {
                                                     var hit = emp;
-                                                    <button type="button" class="va-ac-item" @onclick="@(() => OnHostPickAsync(hit))">
+                                                    <button type="button" class="va-ac-item" @onclick="@(() => OnHostPick(hit))">
                                                         <strong>@hit.StaffName</strong>
                                                         <span>@hit.DepartmentName@(string.IsNullOrWhiteSpace(hit.Mobile) ? "" : " · " + hit.Mobile)</span>
                                                     </button>
@@ -312,7 +311,7 @@
                         }
                         else
                         {
-                            <CameraPreview @ref="_cameraPreview" />
+                            <CameraPreview @ref="_cameraPreview" OnCameraActivated="OnCameraActivatedAsync" />
                         }
                         @if (_capturingFace)
                         {
@@ -321,6 +320,16 @@
                             </div>
                         }
                     </div>
+                    @if (_cameraActive && _autoCapturing)
+                    {
+                        <div class="va-face-compare">
+                            <span class="va-badge va-badge-info">🎥 自动抓拍比对中，请正对摄像头</span>
+                            @if (!string.IsNullOrEmpty(_autoCaptureHint))
+                            {
+                                <span class="va-badge va-badge-muted">@_autoCaptureHint</span>
+                            }
+                        </div>
+                    }
                     @if (_comparingFace || _faceCompareResult is not null)
                     {
                         <div class="va-face-compare">
@@ -363,7 +372,7 @@
                             else
                             {
                                 <button type="button" class="va-btn va-btn-success va-btn-lg" @onclick="CaptureFaceFrameAsync" disabled="@_capturingFace">
-                                    ⏹️ 拍摄
+                                    📷 立即拍摄
                                 </button>
                                 <button type="button" class="va-btn va-btn-ghost va-btn-lg" @onclick="StopCameraAsync">
                                     取消
@@ -392,7 +401,7 @@
 
                 @if (_step < 5)
                 {
-                    <button type="button" class="va-btn va-btn-primary va-btn-lg" @onclick="NextAsync" disabled="@(_step == 2 && _comparingFace)">
+                    <button type="button" class="va-btn va-btn-primary va-btn-lg" @onclick="NextAsync" disabled="@(_step == 2 && (_comparingFace || _autoCapturing))">
                         @L["btn.next"]
                     </button>
                 }
@@ -469,6 +478,15 @@
     private CameraPreview? _cameraPreview;
     private bool _comparingFace;
     private FaceCompareResult? _faceCompareResult;
+
+    // ── 自动抓拍比对 ─────────────────────────────────────────────
+    /// <summary>自动抓拍循环是否运行中。</summary>
+    private bool _autoCapturing;
+    /// <summary>自动抓拍的实时提示（未检测到人脸 / 相似度偏低等）。</summary>
+    private string? _autoCaptureHint;
+    private CancellationTokenSource? _autoCaptureCts;
+    /// <summary>自动抓拍总时长上限：超时后停止自动模式，保留手动拍摄兜底。</summary>
+    private const int AutoCaptureTimeoutMs = 30_000;
 
     /// <summary>
     /// 人脸比对相似度阈值（ArcFace 余弦）：可在「系统设置 → 人脸比对」中调整（百分比），
@@ -583,19 +601,151 @@
         _cameraActive = true;
         State.Current.FacePhoto = string.Empty;
         _faceCompareResult = null;   // 重新拍摄时清空上次比对结果，避免旧结果误导门禁判断。
+        _autoCaptureHint = null;
         StateHasChanged();
     }
 
     private async Task StopCameraAsync()
     {
+        _autoCaptureCts?.Cancel();
         if (_cameraPreview is not null) await _cameraPreview.StopCameraAsync();
-        _cameraActive = false; StateHasChanged();
+        _cameraActive = false;
+        _autoCapturing = false;
+        _autoCaptureHint = null;
+        StateHasChanged();
+    }
+
+    /// <summary>摄像头激活回调：启动自动抓拍比对循环，无需用户手动点击拍摄。</summary>
+    private Task OnCameraActivatedAsync()
+    {
+        _autoCaptureCts?.Cancel();
+        _autoCaptureCts = new CancellationTokenSource();
+        _ = AutoCaptureLoopAsync(_autoCaptureCts.Token);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>从摄像头安全抓一帧（组件未就绪 / 抓帧失败返回 null）。</summary>
+    private async Task<string?> CaptureAutoFrameAsync()
+        => _cameraPreview is null ? null : await _cameraPreview.CaptureFrameAsync();
+
+    /// <summary>
+    /// 自动抓拍循环：摄像头激活后周期性抓帧并与身份证证件照比对，相似度达标即自动定格；
+    /// 未检测到人脸时继续等待入镜；连续 3 次相似度偏低视为疑似非本人，定格后交由门禁拦截；
+    /// 无法比对（非 Windows / 未读卡）时稍作就位后直接定格。超时则回退手动拍摄。
+    /// </summary>
+    private async Task AutoCaptureLoopAsync(CancellationToken ct)
+    {
+        _autoCapturing = true;
+        _autoCaptureHint = "请正对摄像头";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            // 等画面稳定、用户就位后再抓第一帧
+            await Task.Delay(1200, ct);
+
+            var canCompare = FaceComparer.IsSupported && !string.IsNullOrEmpty(State.Current.IdCardPhoto);
+            if (!canCompare)
+            {
+                // 没有比对条件（未读卡 / 平台不支持）：稍作准备后直接自动定格，
+                // 保持原「拍照后自动跳过比对」的行为。
+                await Task.Delay(1300, ct);
+                var still = await CaptureAutoFrameAsync();
+                if (!string.IsNullOrEmpty(still)) await FinalizeAutoCaptureAsync(still, null);
+                return;
+            }
+
+            var deadline = Environment.TickCount64 + AutoCaptureTimeoutMs;
+            var lowStreak = 0;
+            while (!ct.IsCancellationRequested && Environment.TickCount64 < deadline
+                   && _cameraPreview is not null && _cameraPreview.IsActive
+                   && string.IsNullOrEmpty(State.Current.FacePhoto))
+            {
+                var frame = await CaptureAutoFrameAsync();
+                if (string.IsNullOrEmpty(frame))
+                {
+                    await Task.Delay(500, ct);
+                    continue;
+                }
+
+                var result = await FaceComparer.CompareAsync(frame!, State.Current.IdCardPhoto);
+                // 比对期间可能已被手动拍摄 / 取消，避免双写照片与重复提示。
+                if (ct.IsCancellationRequested || !string.IsNullOrEmpty(State.Current.FacePhoto)) return;
+
+                if (result.Success && result.Similarity >= SimilarityThreshold)
+                {
+                    await FinalizeAutoCaptureAsync(frame!, result);
+                    return;
+                }
+                if (result.Success)
+                {
+                    lowStreak++;
+                    _autoCaptureHint = $"识别中… 相似度 {result.Similarity:P1} 偏低，请正对摄像头";
+                    if (lowStreak >= 3)
+                    {
+                        // 连续偏低：疑似非本人，定格后由门禁拦截并提示重拍。
+                        await FinalizeAutoCaptureAsync(frame!, result);
+                        return;
+                    }
+                }
+                else if (result.Message?.Contains("照片 1") == true)
+                {
+                    // 现场帧未检测到人脸：继续等待用户入镜。
+                    _autoCaptureHint = "未检测到人脸，请正对摄像头";
+                }
+                else
+                {
+                    // 证件照问题 / 模型异常：定格并展示失败原因，与手动拍照后的行为一致。
+                    await FinalizeAutoCaptureAsync(frame!, result);
+                    return;
+                }
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(800, ct);
+            }
+
+            // 超时退出（非取消、未被手动完成）：提示改用手动拍摄。
+            if (!ct.IsCancellationRequested && string.IsNullOrEmpty(State.Current.FacePhoto)
+                && _cameraPreview is not null && _cameraPreview.IsActive)
+            {
+                if (_toast is not null)
+                    await _toast.ShowAsync("自动识别超时，请调整位置后点击「立即拍摄」", "error", 3500);
+            }
+        }
+        catch (TaskCanceledException) { /* 用户取消 / 定格时正常退出 */ }
+        finally
+        {
+            _autoCapturing = false;
+            _autoCaptureHint = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>自动抓拍定格：保存现场照与比对结果，停止摄像头并给出提示。</summary>
+    private async Task FinalizeAutoCaptureAsync(string frame, FaceCompareResult? result)
+    {
+        State.Current.FacePhoto = frame;
+        _faceCompareResult = result;
+        await StopCameraAsync();   // 内部会取消自动循环并复位状态
+        if (_toast is not null)
+        {
+            if (result is null)
+                await _toast.ShowAsync(L["face.captured"], "success", 2000);
+            else if (result.Success && result.Similarity >= SimilarityThreshold)
+                await _toast.ShowAsync($"人脸比对通过，相似度 {result.Similarity:P1}", "success", 2600);
+            else if (result.Success)
+                await _toast.ShowAsync($"人脸相似度偏低（{result.Similarity:P1}），请确认是否为本人，必要时重新拍摄", "error", 3500);
+            else
+                await _toast.ShowAsync($"人脸比对未完成：{result.Message}", "error", 3000);
+        }
     }
 
     private async Task CaptureFaceFrameAsync()
     {
         try
         {
+            // 手动拍摄优先于自动循环：先停掉自动抓拍，避免双写照片 / 重复提示。
+            _autoCaptureCts?.Cancel();
+            _autoCapturing = false;
+            _autoCaptureHint = null;
             if (_cameraPreview is null)
             { if (_toast is not null) await _toast.ShowAsync("摄像头未就绪", "error", 2000); return; }
             _capturingFace = true; StateHasChanged();
@@ -638,6 +788,11 @@
                 else
                     await _toast.ShowAsync($"人脸相似度偏低（{result.Similarity:P1}），请确认是否为本人", "error", 3500);
             }
+        }
+        catch (Exception ex)
+        {
+            // 读卡后 / 拍照后均以 fire-and-forget 调用本方法，异常必须就地消化，否则成为未观察任务异常。
+            _faceCompareResult = FaceCompareResult.Fail($"人脸比对异常：{ex.Message}");
         }
         finally
         {
@@ -713,7 +868,7 @@
     /// 点选某位员工：列表接口已返回完整档案（姓名/部门/手机/工号/ID），直接采用并回填，
     /// 不再按工号回查详情——回查结果与列表不一致时会把选择覆盖成错误的员工。
     /// </summary>
-    private void OnHostPickAsync(StaffInfo emp)
+    private void OnHostPick(StaffInfo emp)
     {
         _panelCloseCts?.Cancel();
         _hostPanelOpen = false;
@@ -779,7 +934,7 @@
         {
             if (!await EnsureFaceComparePassedAsync()) return;
         }
-        if (_step >= 3 && _step <= 5 && !ValidateCurrentStep()) return;
+        if (_step >= 3 && _step <= 5 && !await ValidateCurrentStep()) return;
         _step = Math.Min(5, _step + 1);
         // 进入"来访信息"步时若选项仍为空（首次加载时接口未就绪），填写时重试一次。
         if (_step == 5) _ = LoadOptionsAsync(force: true);
@@ -833,29 +988,52 @@
         return true;
     }
 
-    private bool ValidateCurrentStep()
+    private async Task<bool> ValidateCurrentStep()
     {
         var fields = GetCurrentStepFields();
         foreach (var field in fields)
         {
             if (!field.Required) continue;
-            switch (field.Id)
+            if (field.Id == "Name" && string.IsNullOrWhiteSpace(State.Current.Name))
             {
-                case "Name" when string.IsNullOrWhiteSpace(State.Current.Name):
-                case "Phone" when string.IsNullOrWhiteSpace(State.Current.Phone)
-                    || !System.Text.RegularExpressions.Regex.IsMatch(State.Current.Phone ?? "", @"^1[3-9]\d{9}$"):
-                    _toast?.ShowAsync(L["toast.fill_phone"], "error"); return false;
-                case "HostName" when string.IsNullOrWhiteSpace(State.Current.HostName):
-                    _toast?.ShowAsync("请填写被访人", "error"); return false;
-                case "Purpose" when string.IsNullOrWhiteSpace(State.Current.Purpose):
-                    _toast?.ShowAsync("请填写来访事由", "error"); return false;
-                case "VisitEnd" when State.Current.VisitEndTime <= State.Current.VisitStartTime:
-                    _toast?.ShowAsync("访问结束时间必须晚于开始时间", "error"); return false;
-                case "VisitPlace" when State.Current.VisitPlaceId <= 0 && string.IsNullOrWhiteSpace(State.Current.VisitPlaceName):
-                    _toast?.ShowAsync("请选择或填写访问地点", "error"); return false;
+                if (_toast is not null) await _toast.ShowAsync("请填写姓名", "error");
+                return false;
+            }
+            if (field.Id == "Phone" && (string.IsNullOrWhiteSpace(State.Current.Phone)
+                    || !System.Text.RegularExpressions.Regex.IsMatch(State.Current.Phone ?? "", @"^1[3-9]\d{9}$")))
+            {
+                if (_toast is not null) await _toast.ShowAsync(L["toast.fill_phone"], "error");
+                return false;
+            }
+            if (field.Id == "HostName" && string.IsNullOrWhiteSpace(State.Current.HostName))
+            {
+                if (_toast is not null) await _toast.ShowAsync("请填写被访人", "error");
+                return false;
+            }
+            if (field.Id == "Purpose" && string.IsNullOrWhiteSpace(State.Current.Purpose))
+            {
+                if (_toast is not null) await _toast.ShowAsync("请填写来访事由", "error");
+                return false;
+            }
+            if (field.Id == "VisitEnd" && State.Current.VisitEndTime <= State.Current.VisitStartTime)
+            {
+                if (_toast is not null) await _toast.ShowAsync("访问结束时间必须晚于开始时间", "error");
+                return false;
+            }
+            if (field.Id == "VisitPlace" && State.Current.VisitPlaceId <= 0 && string.IsNullOrWhiteSpace(State.Current.VisitPlaceName))
+            {
+                if (_toast is not null) await _toast.ShowAsync("请选择或填写访问地点", "error");
+                return false;
             }
         }
         return true;
+    }
+
+    /// <summary>身份证号脱敏展示：保留前 4 后 4，中间以 * 代替（自助机位于公共区域，防旁窥）。</summary>
+    private static string MaskId(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id.Length < 9) return id ?? string.Empty;
+        return string.Concat(id.AsSpan(0, 4), new string('*', id.Length - 8), id.AsSpan(id.Length - 4, 4));
     }
 
     private void Prev() => _step = Math.Max(1, _step - 1);
@@ -867,7 +1045,7 @@
         _submitting = true;
         try
         {
-            // 走真实后端契约：创建登记单(iVisitorAppointment) + 立即签到(VisitorCheckIn)
+            // 走真实后端契约：直接 VisitorCheckIn 登记 + 签到；不再写本地 SQLite。
             var outcome = await RegService.SubmitRegistrationAsync(State.Current);
             if (!outcome.Success)
             {
@@ -876,20 +1054,24 @@
                 return;
             }
 
-            // 本地镜像一份，供成功凭证 / 签退 / 我的来访使用，并回填后端登记单号。
-            var code = VisitorFormState.GenerateVisitCode();
-            var visitor = State.Current.ToVisitor(code);
+            // 凭证信息保留在内存态（当前会话内展示），历史记录统一从后端 QueryVisitorRegistrationSheet 查询。
+            var visitor = State.Current.ToVisitor(VisitorFormState.GenerateVisitCode());
             visitor.SheetId = outcome.SheetId;
-            visitor.Status = outcome.CheckedIn ? VisitStatus.CheckedIn : VisitStatus.CheckedIn;
-            await Db.SaveAsync(visitor);
+            visitor.Status = VisitStatus.CheckedIn;
             State.LastSubmitted = visitor;
 
-            if (_toast is not null) await _toast.ShowAsync(outcome.Message);
-            if (outcome.SheetId > 0 && _toast is not null)
-                _ = _toast.ShowAsync(L.Format("toast.api_ticket", outcome.SheetId.ToString()), "success", 2500);
+            // 合并为一条成功提示：Toast.ShowAsync 会等待完整展示时长，
+            // 顺序展示两条再跳转会拖慢流程，且成功页本身会完整展示凭证信息。
+            if (_toast is not null)
+            {
+                var ticket = outcome.SheetId > 0
+                    ? L.Format("toast.api_ticket", outcome.SheetId.ToString())
+                    : string.Empty;
+                var msg = string.IsNullOrWhiteSpace(ticket) ? outcome.Message : $"{outcome.Message} {ticket}";
+                await _toast.ShowAsync(msg, "success", 2000);
+            }
 
-            await Task.Delay(500);
-            Nav.NavigateTo($"success/{visitor.Id}");
+            Nav.NavigateTo($"success/{outcome.SheetId}");
         }
         catch (Exception ex)
         {
@@ -901,6 +1083,7 @@
 
     public void Dispose()
     {
+        _autoCaptureCts?.Cancel();
         _hostSearchCts?.Cancel();
         _panelCloseCts?.Cancel();
         L.OnLanguageChanged -= OnLang;

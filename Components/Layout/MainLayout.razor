@@ -1,11 +1,12 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @implements IDisposable
 @inject NavigationManager Nav
 @inject LocalizationService L
+@inject VisitorFormState FormState
 
 <div class="va-shell">
     <header class="va-top">
-        <a class="va-brand" href="">
+        <a class="va-brand" href="" @onclick:preventDefault @onclick="BackHome">
             <span class="va-logo">访</span>
             <div class="va-brand-text">
                 <strong>智能访客自助登记</strong>
@@ -13,10 +14,7 @@
             </div>
         </a>
         <div class="va-top-right">
-            <div class="va-clock">
-                <span class="va-time">@_now.ToString("HH:mm:ss")</span>
-                <span class="va-date">@_now.ToString(L.CurrentLanguage == "en-US" ? "dddd, MMM d yyyy" : "yyyy 年 MM 月 dd 日 dddd", System.Globalization.CultureInfo.GetCultureInfo(L.CurrentLanguage))</span>
-            </div>
+            <Clock />
             <LanguageSwitcher />
             @if (!IsSettings)
             {
@@ -24,7 +22,7 @@
             }
             @if (!IsHome)
             {
-                <a class="va-btn va-btn-ghost" href="">@L["app.back_home"]</a>
+                <a class="va-btn va-btn-ghost" href="" @onclick:preventDefault @onclick="BackHome">@L["app.back_home"]</a>
             }
         </div>
     </header>
@@ -42,9 +40,6 @@
 <AntContainer />
 
 @code {
-    private DateTime _now = DateTime.Now;
-    private System.Threading.Timer? _timer;
-
     private bool IsHome
     {
         get
@@ -65,21 +60,21 @@
 
     protected override void OnInitialized()
     {
-        _timer = new System.Threading.Timer(_ =>
-        {
-            _now = DateTime.Now;
-            InvokeAsync(StateHasChanged);
-        }, null, 1000, 1000);
-
         Nav.LocationChanged += OnLocationChanged;
         L.OnLanguageChanged += OnLangChanged;
     }
 
     public void Dispose()
     {
-        _timer?.Dispose();
         Nav.LocationChanged -= OnLocationChanged;
         L.OnLanguageChanged -= OnLangChanged;
+    }
+
+    /// <summary>返回首页：同时清空登记流程状态，避免上一位访客半途离开后残留信息被下一位看到。</summary>
+    private void BackHome()
+    {
+        FormState.ResetAll();
+        Nav.NavigateTo("");
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)

@@ -1,0 +1,43 @@
+@* 顶栏时钟：独立组件隔离每秒一次的重渲染，避免 MainLayout 整页（含 @Body）跟着时钟刷新。 *@
+@inject LocalizationService L
+@implements IDisposable
+
+<div class="va-clock">
+    <span class="va-time">@_now.ToString("HH:mm:ss")</span>
+    <span class="va-date">@_now.ToString(L.CurrentLanguage == "en-US" ? "dddd, MMM d yyyy" : "yyyy 年 MM 月 dd 日 dddd", System.Globalization.CultureInfo.GetCultureInfo(L.CurrentLanguage))</span>
+</div>
+
+@code {
+    private DateTime _now = DateTime.Now;
+    private System.Threading.Timer? _timer;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        _timer = new System.Threading.Timer(_ => _ = TickAsync(), null, 1000, 1000);
+        L.OnLanguageChanged += OnLangChanged;
+    }
+
+    /// <summary>定时器回调只做调度：异常全部就地消化（async void 语义回调抛异常会击穿进程）。</summary>
+    private async Task TickAsync()
+    {
+        try
+        {
+            _now = DateTime.Now;
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // 时钟渲染失败不影响页面
+        }
+    }
+
+    private void OnLangChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _timer?.Dispose();
+        L.OnLanguageChanged -= OnLangChanged;
+    }
+}

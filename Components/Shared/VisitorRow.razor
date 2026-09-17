@@ -12,7 +12,7 @@
                     }
                     <span class="@Visitor.Status.ToBadgeClass()">@Visitor.Status.ToDisplay()</span>
                 </div>
-                <div class="va-vr-meta">📞 @Visitor.Phone
+                <div class="va-vr-meta">📞 @MaskPhone(Visitor.Phone)
                     @if (!string.IsNullOrWhiteSpace(Visitor.Company))
                     {
                         <span> · 🏢 @Visitor.Company</span>
@@ -52,5 +52,12 @@
     {
         if (string.IsNullOrWhiteSpace(name)) return "·";
         return name.Trim()[0].ToString();
+    }
+
+    /// <summary>手机号脱敏：保留前 3 后 4（记录列表位于公共自助机屏幕，防旁窥）。</summary>
+    private static string MaskPhone(string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone) || phone.Length < 8) return phone ?? string.Empty;
+        return string.Concat(phone.AsSpan(0, 3), "****", phone.AsSpan(phone.Length - 4, 4));
     }
 }

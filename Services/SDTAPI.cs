@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using SkiaSharp;
@@ -7,62 +7,18 @@ namespace VisitorApp.Platforms.Windows
 {
     public class IDReader
     {
+        // 仅保留实际用到的 SDK 入口；SAM 管理 / 写卡等未用声明已删除（原样保留 P/Invoke 签名供需要时恢复）。
         [DllImport("sdtapi.dll")]
         public static extern int SDT_OpenPort(int iPortID);
         [DllImport("sdtapi.dll")]
         public static extern int SDT_ClosePort(int iPortID);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_PowerManagerBegin(int iPortID, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_AddSAMUser(int iPortID, string pcUserName, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_SAMLogin(int iPortID, string pcUserName, string pcPasswd, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_SAMLogout(int iPortID, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_UserManagerOK(int iPortID, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_ChangeOwnPwd(int iPortID, string pcOldPasswd, string pcNewPasswd, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_ChangeOtherPwd(int iPortID, string pcUserName, string pcNewPasswd, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_DeleteSAMUser(int iPortID, string pcUserName, int iIfOpen);
 
         [DllImport("sdtapi.dll")]
-        public static extern int SDT_StartFindIDCard(int iPortID, ref int pucIIN, int iIfOpen);
+        public static extern int SDT_StartFindIDCard(int iPortID, byte[] pucIIN, int iIfOpen);
         [DllImport("sdtapi.dll")]
-        public static extern int SDT_SelectIDCard(int iPortID, ref int pucSN, int iIfOpen);
+        public static extern int SDT_SelectIDCard(int iPortID, byte[] pucSN, int iIfOpen);
         [DllImport("sdtapi.dll")]
         public static extern int SDT_ReadBaseMsg(int iPortID, IntPtr pucCHMsg, ref int puiCHMsgLen, IntPtr pucPHMsg, ref int puiPHMsgLen, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_ReadBaseMsgToFile(int iPortID, string fileName1, ref int puiCHMsgLen, string fileName2, ref int puiPHMsgLen, int iIfOpen);
-
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_WriteAppMsg(int iPortID, ref byte pucSendData, int uiSendLen, ref byte pucRecvData, ref int puiRecvLen, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_WriteAppMsgOK(int iPortID, ref byte pucData, int uiLen, int iIfOpen);
-
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_CancelWriteAppMsg(int iPortID, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_ReadNewAppMsg(int iPortID, ref byte pucAppMsg, ref int puiAppMsgLen, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_ReadAllAppMsg(int iPortID, ref byte pucAppMsg, ref int puiAppMsgLen, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_UsableAppMsg(int iPortID, ref byte ucByte, int iIfOpen);
-
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_GetUnlockMsg(int iPortID, ref byte strMsg, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_GetSAMID(int iPortID, ref byte StrSAMID, int iIfOpen);
-
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_SetMaxRFByte(int iPortID, byte ucByte, int iIfOpen);
-        [DllImport("sdtapi.dll")]
-        public static extern int SDT_ResetSAM(int iPortID, int iIfOpen);
-
-        [DllImport("WltRS.dll")]
-        public static extern int GetBmp(string file_name, int intf);
 
         [DllImport("IDCUnpack.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern int unpack(byte[] src, byte[] dst, int bmpSave);
@@ -92,14 +48,28 @@ namespace VisitorApp.Platforms.Windows
             });
         }
 
-        private static int isOpen = 1;               //自动开关串口 
+        private static int isOpen = 1;               //自动开关串口
         /// <summary>最近一次读卡失败的原因（供上层展示具体错误），成功时为 null。</summary>
         public static string? LastError { get; private set; }
 
         /// <summary>最近一次读卡的过程诊断（各阶段返回值），用于排查证件照解码等问题。</summary>
         public static string Diagnostics { get; private set; } = string.Empty;
 
-        public static ReadCompletedEventArgs ReadIDCard()
+        /// <summary>
+        /// 读卡全程串行锁：静态诊断状态（LastError / Diagnostics）与"临时切换进程工作目录给
+        /// IDCUnpack.dll 找授权文件"都不允许并发交错，读卡期间其他线程的相对路径 I/O 也在锁内完成。
+        /// </summary>
+        private static readonly object _readLock = new object();
+
+        public static ReadCompletedEventArgs? ReadIDCard()
+        {
+            lock (_readLock)
+            {
+                return ReadIDCardCore();
+            }
+        }
+
+        private static ReadCompletedEventArgs? ReadIDCardCore()
         {
             try
             {
@@ -108,11 +78,11 @@ namespace VisitorApp.Platforms.Windows
                 bool isUsbPort = false;
                 int portNo = 0;
                 int ret = 0;
-                int pucIIN = 0;
-                int pucSN = 0;
-                int puiCHMsgLen = 0;
-                int puiPHMsgLen = 0;
                 int portID = 0;
+                // SDK 输出缓冲：IIN / SN 均为 8 字节，用 byte[8] 钉住完整缓冲（ref int 只有 4 字节，
+                // 原生侧越界写会破坏相邻栈变量）。
+                byte[] pucIIN = new byte[8];
+                byte[] pucSN = new byte[8];
                 ReadCompletedEventArgs cardInfo = new ReadCompletedEventArgs();
                 //检测usb口的机具连接，必须先检测usb
                 for (int port = 1001; port <= 1016; port++)
@@ -128,19 +98,16 @@ namespace VisitorApp.Platforms.Windows
                 //检测串口的机具连接
                 if (!isUsbPort)
                 {
-                   
-                        for (int iPort = 1; iPort <= 2; iPort++)
+                    for (int iPort = 1; iPort <= 2; iPort++)
+                    {
+                        portNo = SDT_OpenPort(iPort);
+                        if (portNo == 144)
                         {
-                            portNo = SDT_OpenPort(iPort);
-                            if (portNo == 144)
-                            {
-                                portID = iPort;
-                                isUsbPort = false;
-                                break;
-                            }
+                            portID = iPort;
+                            isUsbPort = false;
+                            break;
                         }
-                   
-
+                    }
                 }
                 if (portNo != 144)
                 {
@@ -148,84 +115,119 @@ namespace VisitorApp.Platforms.Windows
                     return null;
                 }
 
-                //下面找卡
-                ret = SDT_StartFindIDCard(portID, ref pucIIN, isOpen);
-                if (ret != 159)
+                // 找卡 / 选卡 / 读信息：任何路径（含异常）都经 finally 关闭端口，不再泄漏已打开的串口。
+                byte[] basicInfoBytes;
+                byte[] phData;
+                try
                 {
-
-                    ret = SDT_StartFindIDCard(portID, ref pucIIN, isOpen);  //再找卡
+                    //找卡
+                    ret = SDT_StartFindIDCard(portID, pucIIN, isOpen);
                     if (ret != 159)
                     {
-                        ret = SDT_ClosePort(portID);
-
-                        LastError = $"找卡失败(返回值 {ret})：请将身份证放置在读卡器感应区";
-                        return null;
+                        ret = SDT_StartFindIDCard(portID, pucIIN, isOpen);  //再找卡
+                        if (ret != 159)
+                        {
+                            // 报真实找卡返回值，而不是随后 ClosePort 的返回值。
+                            LastError = $"找卡失败(返回值 {ret})：请将身份证放置在读卡器感应区";
+                            return null;
+                        }
                     }
-                }
 
-                //选卡
-                ret = SDT_SelectIDCard(portID, ref pucSN, isOpen);
-                if (ret != 144)
-                {
-                    ret = SDT_SelectIDCard(portID, ref pucSN, isOpen);  //再选卡
+                    //选卡
+                    ret = SDT_SelectIDCard(portID, pucSN, isOpen);
                     if (ret != 144)
                     {
-                        ret = SDT_ClosePort(portID);
+                        ret = SDT_SelectIDCard(portID, pucSN, isOpen);  //再选卡
+                        if (ret != 144)
+                        {
+                            LastError = $"选卡失败(返回值 {ret})：请重新放置身份证";
+                            return null;
+                        }
+                    }
 
-                        LastError = $"选卡失败(返回值 {ret})：请重新放置身份证";
-                        return null;
+                    //读基本信息 + 照片
+                    IntPtr hCHMsg = Marshal.AllocHGlobal(1024);
+                    IntPtr hPHMsg = Marshal.AllocHGlobal(1024);
+                    try
+                    {
+                        int puiCHMsgLen = 0, puiPHMsgLen = 0;
+                        ret = SDT_ReadBaseMsg(portID, hCHMsg, ref puiCHMsgLen, hPHMsg, ref puiPHMsgLen, isOpen);
+                        // 先校验返回值与长度，再拷贝：失败时长度字段可能是垃圾值，直接 Marshal.Copy 会越界读。
+                        if (ret != 144)
+                        {
+                            LastError = $"读卡失败(返回值 {ret})：请重新放置身份证";
+                            return null;
+                        }
+                        if (puiCHMsgLen < 0 || puiCHMsgLen > 1024 || puiPHMsgLen < 0 || puiPHMsgLen > 1024)
+                        {
+                            LastError = $"读卡返回异常长度(文本 {puiCHMsgLen} / 照片 {puiPHMsgLen})";
+                            return null;
+                        }
+                        basicInfoBytes = new byte[puiCHMsgLen];
+                        Marshal.Copy(hCHMsg, basicInfoBytes, 0, puiCHMsgLen);
+                        phData = new byte[puiPHMsgLen];
+                        Marshal.Copy(hPHMsg, phData, 0, puiPHMsgLen);
+                        Diagnostics += $"ReadBaseMsg ret={ret}, chLen={puiCHMsgLen}, phLen={puiPHMsgLen}; ";
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(hCHMsg);
+                        Marshal.FreeHGlobal(hPHMsg);
                     }
                 }
-
-
-
-                IntPtr hCHMsg = Marshal.AllocHGlobal(1024);
-                IntPtr hPHMsg = Marshal.AllocHGlobal(1024);
-
-                StringBuilder ph = new StringBuilder(2048);
-                ret = SDT_ReadBaseMsg(portID, hCHMsg, ref puiCHMsgLen, hPHMsg, ref puiPHMsgLen, isOpen);
-
-                byte[] basicInfoBytes = new byte[puiCHMsgLen];
-                Marshal.Copy(hCHMsg, basicInfoBytes, 0, puiCHMsgLen);
-                Marshal.FreeHGlobal(hCHMsg);
-
-                byte[] phData = new byte[puiPHMsgLen];
-                Marshal.Copy(hPHMsg, phData, 0, puiPHMsgLen);
-                Marshal.FreeHGlobal(hPHMsg);
-                Diagnostics += $"ReadBaseMsg ret={ret}, chLen={puiCHMsgLen}, phLen={puiPHMsgLen}; ";
-
-                if (ret != 144)
+                finally
                 {
-                    ret = SDT_ClosePort(portID);
-                    LastError = $"读卡失败(返回值 {ret})：请重新放置身份证";
-                    return null;
+                    SDT_ClosePort(portID);
                 }
 
-
-
-                ret = SDT_ClosePort(portID);
-
-
-
-                string str = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes);
-                cardInfo.Name = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 0, 30).Trim();
-                cardInfo.GenderCode = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 30, 2).Trim();
-                cardInfo.EthnicGroupCode = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 32, 4).Trim();
-                string birthDate = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 36, 16).Trim();
-                cardInfo.BirthDate = DateTime.ParseExact(birthDate, "yyyyMMdd", null);
-                cardInfo.Address = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 52, 70).Trim();
-                cardInfo.IDCard = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 122, 36).Trim();
-                cardInfo.Issued = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 158, 30).Trim();
-                string effectiveDate = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 188, basicInfoBytes.GetLength(0) - 188).Trim();
-                cardInfo.StartDate = DateTime.ParseExact(effectiveDate.Substring(0, 8), "yyyyMMdd", null);
-                var expiryTime = effectiveDate.Substring(8);
-                if (expiryTime.Trim() != "长期")
+                cardInfo.Name = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 0, Math.Min(30, basicInfoBytes.Length)).Trim();
+                if (basicInfoBytes.Length >= 36)
                 {
-                    cardInfo.EndDate = DateTime.ParseExact(expiryTime, "yyyyMMdd", null); ;
+                    cardInfo.GenderCode = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 30, 2).Trim();
+                    cardInfo.EthnicGroupCode = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 32, 4).Trim();
+                }
+                if (basicInfoBytes.Length >= 52)
+                {
+                    string birthDate = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 36, 16).Trim();
+                    if (DateTime.TryParseExact(birthDate, "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var birth))
+                        cardInfo.BirthDate = birth;
+                }
+                if (basicInfoBytes.Length >= 122)
+                {
+                    cardInfo.Address = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 52, 70).Trim();
+                }
+                if (basicInfoBytes.Length >= 158)
+                {
+                    cardInfo.IDCard = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 122, 36).Trim();
+                }
+                if (basicInfoBytes.Length >= 188)
+                {
+                    cardInfo.Issued = System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 158, 30).Trim();
+                }
+                // 有效期：防御性解析——数据异常时保留默认日期并记录诊断，不再让整次已成功的读卡作废。
+                string effectiveDate = basicInfoBytes.Length > 188
+                    ? System.Text.UnicodeEncoding.Unicode.GetString(basicInfoBytes, 188, basicInfoBytes.Length - 188).Trim()
+                    : string.Empty;
+                if (effectiveDate.Length >= 8 && DateTime.TryParseExact(effectiveDate.Substring(0, 8), "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var start))
+                {
+                    cardInfo.StartDate = start;
+                    var expiry = effectiveDate.Length > 8 ? effectiveDate.Substring(8).Trim() : string.Empty;
+                    if (expiry == "长期")
+                    {
+                        cardInfo.EndDate = DateTime.MaxValue;
+                    }
+                    else if (DateTime.TryParseExact(expiry, "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var end))
+                    {
+                        cardInfo.EndDate = end;
+                    }
+                    else
+                    {
+                        Diagnostics += $"有效期数据无法解析({effectiveDate}); ";
+                    }
                 }
                 else
                 {
-                    cardInfo.EndDate = DateTime.MaxValue;
+                    Diagnostics += "有效期数据无法解析; ";
                 }
 
                 byte[] output = new byte[102 * 126 * 3];
@@ -306,7 +308,6 @@ namespace VisitorApp.Platforms.Windows
             }
             catch (Exception ex)
             {
-                //ConstDefine.Logger.Error(ex);
                 LastError = $"读卡异常：{ex.Message}";
                 return null;
             }
@@ -378,8 +379,8 @@ namespace VisitorApp.Platforms.Windows
             EthnicGroupList.Add("98", "外国人入籍");
         }
 
-        public string Name { get; set; }
-        public string GenderCode{ get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string GenderCode{ get; set; } = string.Empty;
   
         public string GenderName
         {
@@ -398,8 +399,8 @@ namespace VisitorApp.Platforms.Windows
                 return genderName;
             }
         }
-        public string IDCard { get; set; }
-        public string EthnicGroupCode { get; set; }
+        public string IDCard { get; set; } = string.Empty;
+        public string EthnicGroupCode { get; set; } = string.Empty;
 
         public string EthnicGroupName
         {
@@ -412,8 +413,8 @@ namespace VisitorApp.Platforms.Windows
         }
 
         public DateTime BirthDate { get; set; }
-        public string Address { get; set; }
-        public string Issued { get; set; }
+        public string Address { get; set; } = string.Empty;
+        public string Issued { get; set; } = string.Empty;
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
 
@@ -479,6 +480,6 @@ namespace VisitorApp.Platforms.Windows
             }
 
         }
-        public byte[] PhotoData { get; set; }
+        public byte[] PhotoData { get; set; } = Array.Empty<byte>();
     }
 }

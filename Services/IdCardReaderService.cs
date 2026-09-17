@@ -40,8 +40,8 @@ public class IdCardReaderService : IIdCardReaderService
                         : card.EndDate.ToString("yyyy-MM-dd"),
                 };
 
-                // 将证件照 byte[] 转为 base64 data URL
-                if ((card.PhotoData?.Length ?? 0) > 0)
+                // 将证件照 byte[] 转为 base64 data URL（PhotoData 已保证非空：SDTAPI 层初始化为空数组）
+                if (card.PhotoData.Length > 0)
                 {
                     result.PhotoBase64 = "data:image/jpeg;base64,"
                         + Convert.ToBase64String(card.PhotoData);

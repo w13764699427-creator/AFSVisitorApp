@@ -8,6 +8,8 @@ window.VisitorApp = window.VisitorApp || {};
 window.VisitorApp.Camera = (function () {
     let _stream = null;
     let _videoElement = null;
+    // 启动序号：并发 start（快速重拍 / 页面反复开关）时只保留最新一次会话，旧流立即释放
+    let _startSeq = 0;
 
     /**
      * 启动摄像头，将视频流绑定到指定 id 的 <video> 元素。
@@ -16,6 +18,7 @@ window.VisitorApp.Camera = (function () {
      * @returns {Promise<{success: boolean, error?: string}>}
      */
     async function start(elementId, optionsJson) {
+        var seq = ++_startSeq;
         // 如果已有流在运行，先停止
         stop();
 
@@ -34,8 +37,9 @@ window.VisitorApp.Camera = (function () {
             audio: false
         };
 
+        var stream;
         try {
-            _stream = await navigator.mediaDevices.getUserMedia(constraints);
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
         } catch (err) {
             console.error('[Camera] getUserMedia error:', err);
             if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
@@ -51,16 +55,40 @@ window.VisitorApp.Camera = (function () {
             }
         }
 
-        videoElement.srcObject = _stream;
-        _videoElement = videoElement;
+        // 等待期间被新的 start / stop 取代：本次获取的流立即释放，防止摄像头被占住
+        if (seq !== _startSeq) {
+            stream.getTracks().forEach(function (track) { track.stop(); });
+            throw new Error('摄像头会话已更新');
+        }
 
-        // 等待视频元数据加载完成
-        await new Promise(function (resolve, reject) {
-            videoElement.onloadedmetadata = function () {
-                videoElement.play().then(resolve).catch(reject);
-            };
-            setTimeout(function () { reject(new Error('视频加载超时')); }, 8000);
-        });
+        _stream = stream;
+        _videoElement = videoElement;
+        videoElement.srcObject = stream;
+
+        // 等待视频元数据加载完成；超时定时器在完成后清理，失败时释放流避免指示灯常亮
+        try {
+            await new Promise(function (resolve, reject) {
+                var timer = setTimeout(function () {
+                    cleanup();
+                    reject(new Error('视频加载超时'));
+                }, 8000);
+                function cleanup() {
+                    clearTimeout(timer);
+                    videoElement.onloadedmetadata = null;
+                }
+                videoElement.onloadedmetadata = function () {
+                    cleanup();
+                    videoElement.play().then(resolve).catch(reject);
+                };
+            });
+        } catch (err) {
+            if (seq === _startSeq) {
+                stop();
+            } else {
+                stream.getTracks().forEach(function (track) { track.stop(); });
+            }
+            throw err;
+        }
     }
 
     /**
